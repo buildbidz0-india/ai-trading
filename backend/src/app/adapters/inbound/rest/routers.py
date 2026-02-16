@@ -77,44 +77,52 @@ async def health_check() -> HealthResponse:
     from starlette.responses import JSONResponse
 
     # ── Check Redis ──────────────────────────────────────────
-    redis_status = "disconnected"
+    redis_status = "connected"
+    redis_error = None
     try:
         from app.dependencies import get_cache
-
         cache = get_cache()
-        if await cache.health_check():
-            redis_status = "connected"
-    except Exception:
-        pass
+        if not await cache.health_check():
+            redis_status = "disconnected"
+            redis_error = "Ping failed"
+    except Exception as e:
+        redis_status = "disconnected"
+        redis_error = str(e)
 
     # ── Check Database ───────────────────────────────────────
-    db_status = "disconnected"
+    db_status = "connected"
+    db_error = None
     try:
         from app.dependencies import get_session_factory
         from sqlalchemy import text
-
         factory = get_session_factory()
         async with factory() as session:
             await session.execute(text("SELECT 1"))
-            db_status = "connected"
-    except Exception:
-        pass
+    except Exception as e:
+        db_status = "disconnected"
+        db_error = str(e)
 
     overall = "ok" if db_status == "connected" and redis_status == "connected" else "degraded"
 
-    resp = HealthResponse(
-        status=overall,
-        version="0.1.0",
-        environment=settings.app_env.value,
-        services={
+    resp_data = {
+        "status": overall,
+        "version": "0.1.0",
+        "environment": settings.app_env.value,
+        "services": {
             "database": db_status,
             "redis": redis_status,
             "broker": f"{settings.broker_provider} (paper_mode={settings.paper_trading_mode})",
-        },
-    )
+        }
+    }
+    
+    if db_error:
+        resp_data["services"]["database_error"] = db_error
+    if redis_error:
+        resp_data["services"]["redis_error"] = redis_error
+
     if overall != "ok":
-        return JSONResponse(content=resp.model_dump(), status_code=503)
-    return resp
+        return JSONResponse(content=resp_data, status_code=503)
+    return HealthResponse(**resp_data)
 
 
 @health_router.get("/metrics")
