@@ -1,13 +1,17 @@
+"use client";
+
 import { Shell } from "@/components/layout/Shell";
 import { AcrylicCard } from "@/components/ui/AcrylicCard";
 import { ChartComponent } from "@/components/ui/Chart";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Watchlist } from "@/components/ui/Watchlist";
 import { OrderEntry } from "@/components/ui/OrderEntry";
+import { useTickStream } from "@/hooks/useTickStream";
 
 export default function Home() {
+  // Connect to live WebSocket tick stream
+  useTickStream();
+
   return (
     <Shell>
       <div className="grid grid-cols-12 gap-6 h-full">

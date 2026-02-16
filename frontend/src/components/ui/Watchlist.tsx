@@ -3,14 +3,28 @@
 import { useStore } from "@/lib/store";
 import { AcrylicCard } from "@/components/ui/AcrylicCard";
 import { cn } from "@/lib/utils";
+import { Wifi, WifiOff } from "lucide-react";
 
 export function Watchlist() {
-    const { watchlist, selectedTicker, setSelectedTicker } = useStore();
+    const { watchlist, selectedTicker, setSelectedTicker, marketState } = useStore();
 
     return (
         <AcrylicCard className="flex flex-col h-[300px] p-0 overflow-hidden">
-            <div className="p-3 border-b border-border bg-muted/20">
+            <div className="p-3 border-b border-border bg-muted/20 flex items-center justify-between">
                 <h3 className="font-semibold text-sm">Market Watch</h3>
+                <div className="flex items-center gap-1.5" title={marketState.isConnected ? 'Live feed connected' : 'Disconnected — using cached data'}>
+                    {marketState.isConnected ? (
+                        <>
+                            <Wifi className="size-3 text-green-500" />
+                            <span className="text-[10px] text-green-500 font-medium uppercase tracking-wider">Live</span>
+                        </>
+                    ) : (
+                        <>
+                            <WifiOff className="size-3 text-yellow-500" />
+                            <span className="text-[10px] text-yellow-500 font-medium uppercase tracking-wider">Offline</span>
+                        </>
+                    )}
+                </div>
             </div>
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-muted">
                 <table className="w-full text-sm">
@@ -32,10 +46,12 @@ export function Watchlist() {
                                 )}
                             >
                                 <td className="p-2 font-medium">{ticker.symbol}</td>
-                                <td className="text-right p-2">{ticker.price.toFixed(2)}</td>
+                                <td className="text-right p-2 font-mono">
+                                    ₹{ticker.price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
                                 <td
                                     className={cn(
-                                        "text-right p-2",
+                                        "text-right p-2 font-mono",
                                         ticker.changePercent >= 0 ? "text-green-500" : "text-red-500"
                                     )}
                                 >
