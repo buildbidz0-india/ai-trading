@@ -11,6 +11,7 @@ from functools import lru_cache
 from typing import Any, AsyncGenerator
 
 from fastapi import Depends, Header, HTTPException, status
+from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.adapters.outbound.broker import (
@@ -65,6 +66,7 @@ _cache: RedisCacheAdapter | None = None
 _event_bus: InProcessEventBus | None = None
 _broker: PaperBrokerAdapter | DhanBrokerAdapter | ZerodhaBrokerAdapter | ShoonyaBrokerAdapter | None = None
 _llm: ResilientLLMAdapter | None = None
+_mongodb_client: AsyncIOMotorClient | None = None
 
 import asyncio
 
@@ -174,6 +176,19 @@ def get_llm(settings: Settings | None = None) -> ResilientLLMAdapter:
             backoff_max=s.provider_backoff_max,
         )
     return _llm
+
+
+async def get_mongodb_client(settings: Settings | None = None) -> AsyncIOMotorClient:
+    """Singleton MongoDB client dependency."""
+    global _mongodb_client
+    if _mongodb_client is None:
+        async with _init_lock:
+            if _mongodb_client is None:
+                s = settings or get_cached_settings()
+                if not s.mongodb_uri:
+                    raise ValueError("MONGODB_URI is not set in settings")
+                _mongodb_client = AsyncIOMotorClient(s.mongodb_uri)
+    return _mongodb_client
 
 
 # ── DB session dependency ────────────────────────────────────

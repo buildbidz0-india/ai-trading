@@ -43,6 +43,7 @@ class Settings(BaseSettings):
 
     # ── Database ─────────────────────────────────────────────
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/trading_platform"
+    mongodb_uri: str = ""
     database_pool_size: int = 20
     database_max_overflow: int = 10
 

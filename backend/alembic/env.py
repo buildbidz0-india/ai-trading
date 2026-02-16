@@ -21,6 +21,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Import app settings
+from app.config import get_settings
+app_settings = get_settings()
+config.set_main_option("sqlalchemy.url", app_settings.database_url)
+
 # Import ALL models so metadata is populated
 from app.adapters.outbound.persistence.models import Base  # noqa: E402
 
