@@ -21,6 +21,11 @@ async def main():
         openai_model=os.environ["OPENAI_MODEL"],
         priority_order="openai", # Prioritize OpenAI for this test
     )
+    
+    import json
+    print("Provider Configs:")
+    for c in provider_configs:
+        print(f"ID: {c.provider_id}, Metadata: {c.metadata}")
 
     adapter = ResilientLLMAdapter(
         provider_configs,
@@ -29,13 +34,11 @@ async def main():
 
     print(f"Invoking LLM via adapter (Model: {os.environ['OPENAI_MODEL']})...")
     try:
-        response = await adapter._invoke_openai(
-            api_key=os.environ["OPENAI_API_KEY"],
+        response = await adapter.invoke(
             system_prompt="You are a helpful assistant.",
             user_prompt="Hello from the integration test!",
             temperature=0.7,
             max_tokens=100,
-            model=os.environ["OPENAI_MODEL"]
         )
         print("\n--- Response ---")
         print(response)

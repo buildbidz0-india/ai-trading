@@ -147,6 +147,7 @@ class ResilientLLMAdapter(LLMPort):
         preferred = provider.value if provider else None
 
         async def _call(cfg: ProviderConfig, api_key: str) -> dict[str, Any]:
+            print(f"DEBUG: _call cfg metadata={cfg.metadata}")
             if cfg.provider_id == "anthropic":
                 return await self._invoke_anthropic(
                     api_key, system_prompt, user_prompt, temperature, max_tokens,
@@ -157,6 +158,7 @@ class ResilientLLMAdapter(LLMPort):
                     api_key, system_prompt, user_prompt, temperature, max_tokens,
                     response_format,
                     model=cfg.metadata.get("model", "gpt-4o"),
+                    base_url=cfg.metadata.get("base_url", "https://api.openai.com/v1"),
                 )
             elif cfg.provider_id == "google":
                 return await self._invoke_google(
@@ -213,7 +215,10 @@ class ResilientLLMAdapter(LLMPort):
         response_format: dict[str, Any] | None = None,
         *,
         model: str = "gpt-4o",
+        base_url: str = "https://api.openai.com/v1",
+        base_url: str = "https://api.openai.com/v1",
     ) -> dict[str, Any]:
+        print(f"DEBUG: _invoke_openai called with base_url={base_url}")
         body: dict[str, Any] = {
             "model": model,
             "temperature": temperature,
@@ -226,7 +231,7 @@ class ResilientLLMAdapter(LLMPort):
         if response_format:
             body["response_format"] = response_format
         response = await self._client.post(
-            f"{cfg.metadata.get('base_url', 'https://api.openai.com/v1')}/chat/completions",
+            f"{base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
