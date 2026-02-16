@@ -1,0 +1,257 @@
+# AI-Native Option Trading Platform — Codebase Audit Report
+
+**Date:** 2026-02-16  
+**Auditor:** Automated Technical Audit  
+**Codebase:** `Trading_Ai` (buildbidz0-india/ai-trading)  
+**Version:** 0.1.0
+
+---
+
+## 1. Purpose of the Codebase
+
+### What the Platform Is Designed to Do
+An **institutional-grade, AI-powered options trading platform** tailored for the **Indian Stock Market** (NSE/BSE). It combines high-frequency trading infrastructure with AI-driven analysis to identify and execute high-probability option trades.
+
+### Core Functionality
+- **Trio-Agent AI Intelligence** — Three specialised LLM agents (Market Sensor, Quant, Executioner) collaborate using a Mixture-of-Experts pattern to analyze market data and generate trade recommendations
+- **Multi-Provider LLM Rotational API System** — Autonomous failover across Anthropic (Claude), OpenAI (GPT), and Google (Gemini) with circuit breakers, key rotation, quota management, and health tracking
+- **Order Management** — Full order lifecycle (place, validate, risk-check, submit, fill, cancel) with FSM-based state transitions
+- **Risk Engine & Guardrails** — Deterministic, hard-coded safety layers that intercept every AI-generated order before broker submission
+- **Real-Time Streaming** — WebSocket-based live tick data and AI agent log streaming via Redis pub/sub
+- **Multi-Broker Support** — Adapters for Dhan, Zerodha, Shoonya, and a Paper (simulation) broker
+
+### Architectural Vision
+- **Frontend:** Next.js 15 with Fluent Design principles (Microsoft-grade), TradingView charts, Radix UI, Tailwind CSS, Zustand state management
+- **Backend:** FastAPI (Python 3.12+) following Clean/Hexagonal Architecture with ports, adapters, domain services, and CQRS-style command/query separation
+- **Data Layer:** PostgreSQL + TimescaleDB for persistence, Redis for caching and real-time pub/sub
+- **Monitoring:** Prometheus metrics, Grafana dashboards, OpenTelemetry tracing, structured logging via structlog
+
+---
+
+## 2. Implementation Status
+
+### Overall Estimated Completion: **~55–60%**
+
+The foundational architecture and core business logic are well-implemented. The backend is significantly more mature than the frontend. Several critical integration points and production-hardening gaps remain.
+
+---
+
+### 2.1 Backend — Module-by-Module Breakdown
+
+| Module | Status | Completion | Details |
+|--------|--------|------------|---------|
+| **Application Entry** ([main.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/main.py)) | ✅ Fully Implemented | 100% | App factory, lifespan hooks, 8 REST routers + WS router, 4 middleware layers, CORS, exception handlers |
+| **Configuration** ([config.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/config.py)) | ✅ Fully Implemented | 100% | 150-line Pydantic Settings with env loading, validation, production guards |
+| **Dependency Injection** ([dependencies.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/dependencies.py)) | ✅ Fully Implemented | 95% | Singleton factories with async lock for broker, LLM, cache, DB sessions; auth dependency |
+| **Domain Entities** | ✅ Fully Implemented | 100% | [Instrument](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/entities/__init__.py#42-75), [Order](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/entities/__init__.py#80-134) (FSM-based), [Trade](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/entities/__init__.py#139-161), [Position](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/entities/__init__.py#166-203) (with Greeks), [OptionChainSnapshot](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/entities/__init__.py#225-243) — all with proper value objects (`Money`, `Symbol`, `Quantity`, `StrikePrice`, `Expiry`, `Greeks`) |
+| **Domain Enums** | ✅ Fully Implemented | 100% | Complete set: `Exchange`, `InstrumentType`, `OrderSide`, `OrderType`, `OrderStatus` (with transition rules), `ProductType`, `OptionType`, `LLMProvider`, `AgentRole` |
+| **Domain Exceptions** | ✅ Fully Implemented | 100% | Custom hierarchy: `AuthenticationError`, `InvalidOrderTransitionError`, `RiskLimitExceededError`, `KillSwitchActivatedError` |
+| **Domain Services** | ✅ Fully Implemented | 100% | [RiskEngine](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/services/risk_engine.py#49-140) (6 pre-trade checks: order value, lot count, rate limit, delta exposure, position count, kill switch), [OrderGuardrails](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/services/guardrails.py#46-114) (4 sanity checks for AI-generated orders) |
+| **Ports (Interfaces)** | ✅ Fully Implemented | 100% | 7 ports: [OrderRepository](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#29-53), [TradeRepository](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#55-71), [PositionRepository](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#73-90), [InstrumentRepository](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#92-110), [CachePort](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#115-142), [BrokerPort](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#147-173), [LLMPort](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#197-213), [MarketDataPort](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#178-192), [EventBusPort](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#218-230) |
+| **REST API Routers** | ⚠️ Mostly Implemented | 85% | 8 routers (health, auth, orders, positions, trades, AI, providers, market). **Auth uses hardcoded demo users**, market/history endpoint has inline broker instantiation |
+| **WebSocket Endpoints** | ✅ Fully Implemented | 95% | `/ws/v1/ticks` and `/ws/v1/agent-log` with JWT auth, Redis pub/sub, connection manager. No agent-log WebSocket on frontend side is wired to backend |
+| **LLM Adapter** | ✅ Fully Implemented | 100% | [ResilientLLMAdapter](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/adapters/outbound/llm/__init__.py#105-293) with provider-specific HTTP calls for Anthropic, OpenAI, Google; JSON parsing with fallback extraction |
+| **Provider Resilience Infrastructure** | ✅ Fully Implemented | 95% | [ResilientProviderGateway](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/shared/providers/gateway.py#35-284), [ProviderRouter](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/shared/providers/router.py#21-133) (4 strategies: priority, round-robin, weighted, least-latency), [KeyManager](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/shared/providers/key_manager.py#44-141) (per-key circuit breaker + quota + health), `CircuitBreaker`, `QuotaManager`, `ProviderHealthTracker`. Least-latency strategy is simplified/stub |
+| **Broker Adapters** | ⚠️ Partially Implemented | 70% | [PaperBrokerAdapter](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/adapters/outbound/broker/__init__.py#23-69) is fully working. `DhanBrokerAdapter`, `ZerodhaBrokerAdapter`, `ShoonyaBrokerAdapter` are structurally complete but rely on external API calls that haven't been integration-tested; missing [get_historical_data](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#167-173) on some |
+| **Persistence** | ⚠️ Partially Implemented | 70% | SQLAlchemy repositories ([Order](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/entities/__init__.py#80-134), [Trade](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/entities/__init__.py#139-161), [Position](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/entities/__init__.py#166-203), [Instrument](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/domain/entities/__init__.py#42-75)) are defined. Alembic configured but **no migration files** are present. DB models/tables not verified |
+| **Cache Adapter** | ✅ Fully Implemented | 95% | `RedisCacheAdapter` with get/set/delete/publish/subscribe/health_check/increment |
+| **Event Bus** | ⚠️ Minimally Implemented | 40% | `InProcessEventBus` exists but no event handlers are subscribed; events are published but never consumed |
+| **AI Orchestration Service** | ✅ Fully Implemented | 90% | 229-line service with trio-agent fan-out, concurrent agent invocation, result aggregation, confidence scoring, caching |
+| **Application Commands** | ✅ Fully Implemented | 100% | [PlaceOrderHandler](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/application/commands.py#49-201) (with drawdown computation, guardrails, risk checks, broker submission), [CancelOrderHandler](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/application/commands.py#211-243), [SyncPositionsHandler](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/application/commands.py#255-292) |
+| **Application Queries** | ✅ Fully Implemented | 100% | `GetOrdersHandler`, `GetPositionsHandler`, `GetTradeHistoryHandler`, `GetOptionChainHandler`, `SearchInstrumentsHandler` |
+| **Application DTOs** | ✅ Fully Implemented | 100% | Complete request/response models using Pydantic v2 |
+| **Middleware** | ✅ Fully Implemented | 90% | `RequestIdMiddleware`, `LoggingMiddleware`, `MetricsMiddleware`, `RateLimitMiddleware` |
+| **Security** | ⚠️ Partially Implemented | 60% | JWT create/decode, bcrypt password hashing, API key validation present. **No RBAC, no token refresh endpoint, no user registration, `CHANGE-ME` default secret** |
+| **Observability** | ✅ Mostly Implemented | 85% | Structured logging (structlog), Prometheus metrics endpoint, OpenTelemetry dependencies declared, Prometheus + Grafana in docker-compose |
+
+---
+
+### 2.2 Frontend — Module-by-Module Breakdown
+
+| Module | Status | Completion | Details |
+|--------|--------|------------|---------|
+| **Dashboard Page** (`/`) | ⚠️ Partially Implemented | 65% | Layout with chart, watchlist, order entry, AI log. **Market data cards (PCR, Max Pain, IV Percentile) are hardcoded strings** |
+| **Charts Page** (`/charts`) | ⚠️ Stub/Minimal | 30% | Exists as a route but lightly implemented |
+| **Login Page** (`/login`) | ⚠️ Partially Implemented | 50% | Route exists; auth flow uses API token mechanism |
+| **Settings Page** (`/settings`) | ⚠️ Stub/Minimal | 20% | Route exists but minimal implementation |
+| **Wallet Page** (`/wallet`) | ⚠️ Stub/Minimal | 20% | Route exists but minimal implementation |
+| **Shell/Layout** ([Shell.tsx](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/components/layout/Shell.tsx)) | ✅ Implemented | 80% | Navigation shell with sidebar/header |
+| **Chart Component** ([Chart.tsx](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/components/ui/Chart.tsx)) | ✅ Implemented | 75% | TradingView Lightweight Charts integration |
+| **Watchlist** ([Watchlist.tsx](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/components/ui/Watchlist.tsx)) | ⚠️ Mock Data | 50% | Renders watchlist but uses **hardcoded initial data** (NIFTY, BANKNIFTY, RELIANCE, HDFCBANK, INFY) |
+| **OrderEntry** ([OrderEntry.tsx](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/components/ui/OrderEntry.tsx)) | ⚠️ Partially Implemented | 60% | Order form integrated with Zustand store and API |
+| **Auth Guard** ([AuthGuard.tsx](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/components/auth/AuthGuard.tsx)) | ✅ Implemented | 80% | Route protection component |
+| **UI Primitives** (button, card, input, skeleton) | ✅ Implemented | 90% | Radix UI + CVA-based design tokens |
+| **State Management** ([store.ts](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/lib/store.ts)) | ✅ Implemented | 85% | Zustand store with API integration for orders, positions, market state |
+| **API Client** ([api.ts](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/lib/api.ts)) | ✅ Implemented | 90% | Axios with JWT interceptor, response error handling |
+| **WebSocket Client** ([ws.ts](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/lib/ws.ts)) | ✅ Implemented | 85% | Tick stream and agent log stream with JWT auth |
+| **Auth Utils** ([auth.ts](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/lib/auth.ts)) | ✅ Implemented | 95% | Token storage/retrieval/logout via localStorage |
+| **Types** ([types.ts](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/lib/types.ts)) | ✅ Implemented | 90% | TypeScript interfaces for all domain objects |
+| **Middleware** ([middleware.ts](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/frontend/src/middleware.ts)) | ✅ Implemented | 80% | Next.js middleware for route protection |
+
+---
+
+## 3. Functional Status
+
+### ✅ Currently Operational (with Database + Redis running)
+
+| Feature | Endpoint | Notes |
+|---------|----------|-------|
+| Health Check | `GET /api/v1/health` | Checks DB + Redis connectivity |
+| Prometheus Metrics | `GET /api/v1/metrics` | Exports app metrics |
+| Auth Token Generation | `POST /api/v1/auth/token` | Works with hardcoded `admin` user only |
+| Place Order (Paper) | `POST /api/v1/orders` | Full pipeline: guardrails → risk engine → paper broker |
+| List Orders | `GET /api/v1/orders` | Returns orders from DB |
+| Cancel Order | `DELETE /api/v1/orders/{id}` | With paper broker support |
+| List Positions | `GET /api/v1/positions` | From DB |
+| List Trades | `GET /api/v1/trades` | From DB |
+| AI Analysis | `POST /api/v1/ai/analyze` | Trio-agent orchestration (requires LLM API keys) |
+| Provider Health | `GET /api/v1/providers/health` | Live health status of all LLM providers |
+| WebSocket Ticks | `ws://host/ws/v1/ticks` | Connected to Redis pub/sub |
+| WebSocket Agent Log | `ws://host/ws/v1/agent-log` | Connected to Redis pub/sub |
+
+### ⚠️ Non-Functional or Stubbed
+
+| Feature | Issue |
+|---------|-------|
+| **User Registration** | No registration endpoint; only 1 hardcoded demo user |
+| **Database Migrations** | Alembic is configured but **no migration scripts** exist — tables won't be created |
+| **Live Broker Trading** | Dhan/Zerodha/Shoonya adapters exist but are **untested against real APIs** |
+| **Market Data Feed** | [MarketDataPort](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/ports/outbound.py#178-192) defined but **no adapter implementation** for live NSE/BSE market data |
+| **Option Chain Data** | `GetOptionChainHandler` exists but relies on Redis cache — **no data source feeds it** |
+| **Historical Data** | Market history endpoint has inline broker instantiation (code smell) and falls back to 1 mock data point |
+| **Event Bus Consumers** | Events are published but never consumed — no downstream handlers |
+| **Frontend Market Cards** | PCR, Max Pain, IV Percentile values are **hardcoded in JSX**, not fed by API |
+| **Frontend AI Agent Log** | Hardcoded log entries, not connected to the WebSocket agent-log stream |
+| **Frontend Settings/Wallet** | Stub pages with minimal content |
+| **Token Refresh** | Refresh token is generated but **no refresh endpoint** exists |
+| **RBAC** | JWT carries `role` but **no authorization checks** beyond authentication |
+| **Provider Reset** | `POST /providers/{id}/reset` calls `gateway.reset_provider` which **doesn't exist** on the gateway class |
+
+### Integration Gaps
+
+| Gap | Description |
+|-----|-------------|
+| **Frontend ↔ Market Data** | Frontend chart expects WebSocket tick data; no real data source pushes to Redis `ticks` channel |
+| **Frontend ↔ AI Logs** | Frontend has hardcoded AI log entries; the WebSocket stream exists on both sides but isn't wired together in the UI |
+| **DB Schema ↔ App** | SQLAlchemy models exist but no Alembic migrations to create tables; first run will fail on any DB query |
+| **Broker ↔ Historical Data** | Market history endpoint breaks DI pattern with inline adapter construction |
+
+---
+
+## 4. Production Readiness Assessment
+
+### Stability Level: 🟡 **Early Development / Alpha**
+
+The codebase is architecturally sound and follows enterprise patterns, but it is not production-ready. It operates at a **prototype / early alpha** level.
+
+---
+
+### 4.1 Security Risks
+
+| Risk | Severity | Details |
+|------|----------|---------|
+| **Default JWT Secret** | 🔴 Critical | `jwt_secret_key = "CHANGE-ME"` — production guard exists but only warns, doesn't block |
+| **Hardcoded Demo Users** | 🔴 Critical | Single admin user with hardcoded bcrypt hash; no user management |
+| **No RBAC** | 🟠 High | All authenticated users have full access to all endpoints |
+| **JWT in WebSocket URL** | 🟠 High | Token passed as query parameter — visible in server logs and browser history |
+| **localStorage Token Storage** | 🟡 Medium | Tokens stored in localStorage are vulnerable to XSS |
+| **No Rate Limiting on Auth** | 🟡 Medium | Brute force attack on `/auth/token` is possible |
+| **No Input Sanitization** | 🟡 Medium | Symbol and context inputs pass directly to LLM prompts — potential prompt injection |
+| **API Key in URL** | 🟡 Medium | Google Gemini API key passed as URL query parameter |
+| **No HTTPS Enforcement** | 🟡 Medium | Docker Compose exposes plain HTTP; no TLS termination configured |
+
+### 4.2 Performance Risks
+
+| Risk | Severity | Details |
+|------|----------|---------|
+| **Synchronous Broker Init** | 🟡 Medium | [get_broker()](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/dependencies.py#94-126) is async with lock but called synchronously in DI factories |
+| **No Connection Pooling Limits** | 🟡 Medium | Redis and DB pools configured but untested under load |
+| **LLM Latency** | 🟡 Medium | AI analysis fans out to 3 LLM providers sequentially with 60s timeouts each |
+| **In-Memory Event Bus** | 🟠 High | `InProcessEventBus` won't survive restarts and doesn't distribute across instances |
+| **No WebSocket Heartbeat** | 🟡 Medium | No ping/pong mechanism for WebSocket connections — stale connections may accumulate |
+
+### 4.3 Scalability Limitations
+
+| Limitation | Details |
+|------------|---------|
+| **Single-Process Event Bus** | Won't work in multi-instance deployments |
+| **Singleton Broker Instance** | All requests share one broker connection — potential bottleneck |
+| **No Horizontal Scaling Support** | WebSocket connection manager is in-memory; requires external coordination for multi-instance |
+| **No Queue-Based Processing** | Order processing is synchronous request-response; no background task queue |
+| **No Database Read Replicas** | Single DB connection string; no read/write split |
+
+### 4.4 Test Coverage
+
+| Test Category | Files | Coverage |
+|---------------|-------|----------|
+| **Unit – Domain** | [test_entities.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/tests/unit/domain/test_entities.py), [test_value_objects.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/tests/unit/domain/test_value_objects.py), [test_services.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/tests/unit/domain/test_services.py) | Domain entities, value objects, risk engine, guardrails |
+| **Unit – Application** | [test_commands.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/tests/unit/application/test_commands.py), [test_queries.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/tests/unit/application/test_queries.py) | Command and query handlers |
+| **Unit – Adapters** | [test_broker_adapters.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/tests/unit/adapters/test_broker_adapters.py) | Paper broker adapter |
+| **Unit – Shared** | [test_provider_resilience.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/tests/unit/shared/test_provider_resilience.py) | Provider gateway, router, circuit breaker |
+| **Integration** | [test_api.py](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/tests/integration/test_api.py) | API endpoint integration tests |
+| **Missing** | — | Frontend tests (zero), LLM adapter tests, WebSocket tests, E2E tests, load tests |
+
+> **Estimated Test Coverage: ~25–30%** — The critical domain logic is tested, but adapters, integration paths, and the entire frontend are untested.
+
+---
+
+## 5. Summary
+
+### Overall Completion: **~55–60%**
+
+```
+┌───────────────────────────────────────┐
+│ ████████████████░░░░░░░░░░░░░ ~58%   │
+└───────────────────────────────────────┘
+```
+
+| Dimension | Score |
+|-----------|-------|
+| Architecture & Design | ⭐⭐⭐⭐⭐ Excellent — Clean Architecture, CQRS, DI, hexagonal ports/adapters |
+| Backend Core Logic | ⭐⭐⭐⭐ Strong — Domain, risk engine, guardrails, LLM orchestration |
+| Provider Infrastructure | ⭐⭐⭐⭐ Strong — Multi-provider failover, key rotation, circuit breakers |
+| API Surface | ⭐⭐⭐⭐ Good — 8 REST routers, 2 WebSocket channels, proper DTOs |
+| Frontend | ⭐⭐ Weak — Shell + chart exists, but pages are stubs with hardcoded data |
+| Security | ⭐⭐ Weak — JWT present but demo-only auth, no RBAC, no user management |
+| Data Pipeline | ⭐ Missing — No live market data feed, no data source for option chains |
+| Database | ⭐⭐ Incomplete — Models exist but no migration scripts |
+| Testing | ⭐⭐ Minimal — Unit tests for domain, no frontend/E2E/load tests |
+| DevOps | ⭐⭐⭐ Adequate — Docker Compose, Dockerfiles, Prometheus/Grafana configured |
+
+### Deployment Readiness: 🔴 **Not Production-Ready**
+
+The codebase can be deployed in a **development/demo environment** behind Docker Compose for internal demonstration. It is **not suitable** for any form of live trading or production use.
+
+---
+
+## 6. Next Steps to Production Deployment
+
+### Phase 1 — Critical Blockers (Must-Have)
+1. **Create Alembic migrations** — Generate and apply migration scripts for all SQLAlchemy models
+2. **Implement user management** — Registration, login, password reset via database (remove hardcoded users)
+3. **Secure JWT secret** — Enforce non-default secret with environment variable validation that blocks startup
+4. **Implement RBAC** — Role-based authorization on sensitive endpoints (admin vs. trader)
+5. **Add token refresh endpoint** — `POST /auth/refresh` to exchange refresh tokens
+6. **Implement market data adapter** — Connect to a live NSE/BSE data feed (e.g., via broker WebSocket)
+7. **Wire real-time data to frontend** — Connect WebSocket tick stream to chart and watchlist components
+8. **Fix [reset_provider](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/adapters/inbound/rest/routers.py#398-407) route** — Implement missing [reset_provider](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/adapters/inbound/rest/routers.py#398-407) method on [ResilientProviderGateway](file:///c:/Users/user/.gemini/antigravity/scratch/Trading_Ai/backend/src/app/shared/providers/gateway.py#35-284)
+
+### Phase 2 — Functional Completeness
+9. **Build frontend pages** — Settings, wallet, and charts pages with real data
+10. **Connect AI agent log to frontend** — Wire WebSocket agent-log stream to UI component
+11. **Implement option chain data pipeline** — Feed option chain data from broker into Redis cache
+12. **Add event bus consumers** — Implement handlers for domain events (notifications, audit trail)
+13. **Integration-test broker adapters** — Test Dhan, Zerodha, Shoonya against sandbox/paper APIs
+14. **Refactor market history endpoint** — Use DI instead of inline adapter construction
+
+### Phase 3 — Production Hardening
+15. **Add TLS/HTTPS** — Configure nginx reverse proxy or cloud load balancer with TLS termination
+16. **Move JWT from query params** — Use WebSocket subprotocol or first-message auth pattern
+17. **Add rate limiting on auth** — Prevent brute-force attacks on login endpoint
+18. **LLM prompt injection protection** — Sanitize user inputs before passing to LLM system prompts
+19. **Add comprehensive tests** — Frontend unit/integration tests, E2E tests, load tests
+20. **Implement WebSocket heartbeat** — Ping/pong mechanism with stale connection cleanup
+21. **Add background task queue** — Celery/ARQ for async order processing and notifications
+22. **Configure OTEL exporter** — Connect OpenTelemetry to Jaeger/Zipkin for distributed tracing
+23. **Implement proper logging rotation** — File-based structured log output with rotation for production
+24. **Security audit** — Third-party penetration testing and dependency vulnerability scanning

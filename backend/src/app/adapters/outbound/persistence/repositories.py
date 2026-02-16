@@ -29,7 +29,7 @@ from app.ports.outbound import (
     TradeRepository,
 )
 
-from .models import InstrumentModel, OrderModel, PositionModel, TradeModel
+from .models import InstrumentModel, OrderModel, PositionModel, TradeModel, UserModel
 
 
 # ── Converters ───────────────────────────────────────────────
@@ -370,3 +370,44 @@ class SQLAlchemyInstrumentRepository(InstrumentRepository):
             ),
             expiry=Expiry(m.expiry.date()) if m.expiry else None,
         )
+
+
+# ═══════════════════════════════════════════════════════════════
+#  SQLAlchemy User Repository
+# ═══════════════════════════════════════════════════════════════
+class SQLAlchemyUserRepository:
+    """Database-backed user repository for authentication."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_username(self, username: str) -> UserModel | None:
+        stmt = select(UserModel).where(UserModel.username == username)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_email(self, email: str) -> UserModel | None:
+        stmt = select(UserModel).where(UserModel.email == email)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_id(self, user_id: str) -> UserModel | None:
+        return await self._session.get(UserModel, user_id)
+
+    async def create(self, user: UserModel) -> None:
+        self._session.add(user)
+        await self._session.flush()
+
+    async def username_exists(self, username: str) -> bool:
+        stmt = select(func.count()).select_from(UserModel).where(
+            UserModel.username == username
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one() > 0
+
+    async def email_exists(self, email: str) -> bool:
+        stmt = select(func.count()).select_from(UserModel).where(
+            UserModel.email == email
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one() > 0
