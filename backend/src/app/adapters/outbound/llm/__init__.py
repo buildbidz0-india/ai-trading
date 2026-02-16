@@ -29,6 +29,9 @@ def build_provider_configs(
     anthropic_api_keys: str = "",
     openai_api_keys: str = "",
     google_api_keys: str = "",
+    anthropic_model: str = "claude-3-5-sonnet-20240620",
+    openai_model: str = "gpt-4o",
+    google_model: str = "gemini-2.0-flash",
     anthropic_rpm: int = 50,
     openai_rpm: int = 60,
     google_rpm: int = 60,
@@ -67,7 +70,7 @@ def build_provider_configs(
             timeout_s=timeout_s,
             cb_failure_threshold=cb_failure_threshold,
             cb_cooldown_s=cb_cooldown_s,
-            metadata={"model": "claude-sonnet-4-20250514", "api_version": "2023-06-01"},
+            metadata={"model": anthropic_model, "api_version": "2023-06-01"},
         ),
         ProviderConfig(
             provider_id="openai",
@@ -79,7 +82,7 @@ def build_provider_configs(
             timeout_s=timeout_s,
             cb_failure_threshold=cb_failure_threshold,
             cb_cooldown_s=cb_cooldown_s,
-            metadata={"model": "gpt-4o"},
+            metadata={"model": openai_model},
         ),
         ProviderConfig(
             provider_id="google",
@@ -91,7 +94,7 @@ def build_provider_configs(
             timeout_s=timeout_s,
             cb_failure_threshold=cb_failure_threshold,
             cb_cooldown_s=cb_cooldown_s,
-            metadata={"model": "gemini-2.0-flash"},
+            metadata={"model": google_model},
         ),
     ]
 
