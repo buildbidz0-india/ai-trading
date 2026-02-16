@@ -2,11 +2,20 @@ import axios from 'axios';
 import { getToken } from './auth';
 
 const getApiBaseUrl = () => {
+    // In production, we can often use relative paths if on the same domain
+    if (typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_API_URL) {
+        return '/api/v1';
+    }
+
     const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    // Remove trailing slash if present
+    // Remove trailing slash if present, then add exactly one
     const cleanUrl = rawUrl.replace(/\/$/, '');
-    // Append /api/v1 if not already present
-    return cleanUrl.includes('/api/v1') ? cleanUrl : `${cleanUrl}/api/v1`;
+
+    // If it doesn't already have the version, add it
+    const versionedUrl = cleanUrl.includes('/api/v1') ? cleanUrl : `${cleanUrl}/api/v1`;
+
+    // Ensure it ends with a slash for predictable merging
+    return `${versionedUrl}/`;
 };
 
 const API_BASE_URL = getApiBaseUrl();

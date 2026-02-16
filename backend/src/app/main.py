@@ -104,9 +104,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
 
     # ── Middleware (order matters: first added = outermost) ───
+    cors_origins = settings.cors_origins
+    # FastAPI's CORSMiddleware does not allow ["*"] if allow_credentials is True.
+    # We handle this by checking for "*" and setting allow_origins accordingly.
+    allow_all_origins = "*" in cors_origins
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origins=[] if allow_all_origins else cors_origins,
+        allow_origin_regex=".*" if allow_all_origins else None,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

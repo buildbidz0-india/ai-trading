@@ -106,7 +106,7 @@ export const useStore = create<AppState>()(
             fetchOrders: async () => {
                 set({ isLoadingOrders: true });
                 try {
-                    const { data } = await api.get<OrderResponse[]>('/orders');
+                    const { data } = await api.get<OrderResponse[]>('orders');
                     const orders: Order[] = data.map((o) => ({
                         id: o.id,
                         symbol: o.symbol,
@@ -133,7 +133,7 @@ export const useStore = create<AppState>()(
             fetchPositions: async () => {
                 set({ isLoadingPositions: true });
                 try {
-                    const { data } = await api.get<PositionResponse[]>('/positions');
+                    const { data } = await api.get<PositionResponse[]>('positions');
                     const positions: Position[] = data.map((p) => ({
                         id: p.id,
                         symbol: p.symbol,
@@ -159,7 +159,7 @@ export const useStore = create<AppState>()(
             placeOrder: async (orderReq) => {
                 set({ isPlacingOrder: true });
                 try {
-                    const { data } = await api.post<OrderResponse>('/orders', orderReq);
+                    const { data } = await api.post<OrderResponse>('orders', orderReq);
 
                     // Add to local state immediately
                     const order: Order = {
