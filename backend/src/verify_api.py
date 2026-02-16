@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Ensure the parent directory (src) is in the python path
+sys.path.insert(0, os.path.dirname(__file__))
+
 import asyncio
 from fastapi.testclient import TestClient
 from app.main import create_app
