@@ -102,7 +102,8 @@ async def health_check() -> HealthResponse:
         db_status = "disconnected"
         db_error = str(e)
 
-    overall = "ok" if db_status == "connected" and redis_status == "connected" else "degraded"
+    # Database is critical for 'ok' status, Redis is optional for MVP
+    overall = "ok" if db_status == "connected" else "degraded"
 
     resp_data = {
         "status": overall,
@@ -120,9 +121,8 @@ async def health_check() -> HealthResponse:
     if redis_error:
         resp_data["services"]["redis_error"] = redis_error
 
-    if overall != "ok":
-        return JSONResponse(content=resp_data, status_code=503)
-    return HealthResponse(**resp_data)
+    status_code = 200 if overall == "ok" else 503
+    return JSONResponse(content=resp_data, status_code=status_code)
 
 
 @health_router.get("/metrics")
