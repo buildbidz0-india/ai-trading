@@ -130,9 +130,11 @@ class ResilientProviderGateway:
             attempted.add(pid)
 
             # Try this provider with retries + key rotation
-            provider_result = await self._try_provider(
+            # Explicit split of coroutine and await for type-checker clarity
+            provider_coro = self._try_provider(
                 provider_cfg, request_fn, estimated_tokens, errors
             )
+            provider_result = await provider_coro
             if provider_result is not _SENTINEL:
                 # Emit failover metric if this wasn't the first choice
                 if len(attempted) > 1:
@@ -187,7 +189,7 @@ class ResilientProviderGateway:
                 cb.record_success()
                 quota.record_usage(estimated_tokens)
 
-                log.info("provider_request_success", latency_ms=round(float(latency_ms), 1))
+                log.info("provider_request_success", latency_ms=float(f"{latency_ms:.1f}"))
                 return result
 
             except asyncio.TimeoutError:
@@ -204,7 +206,7 @@ class ResilientProviderGateway:
                 tracker.record_failure(error_msg, latency_ms)
                 cb.record_failure()
                 errors[pid] = error_msg
-                log.warning("provider_request_failed", error=error_msg, latency_ms=round(float(latency_ms), 1))
+                log.warning("provider_request_failed", error=error_msg, latency_ms=float(f"{latency_ms:.1f}"))
 
             # Backoff before next attempt (within same provider)
             if attempt < max_attempts - 1:

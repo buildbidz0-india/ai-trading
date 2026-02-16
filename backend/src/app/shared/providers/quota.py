@@ -89,7 +89,7 @@ class QuotaManager:
             if self._rpm_limit <= 0:
                 return 100.0
             used = len(self._records)
-            return round(float(max(0.0, (1.0 - used / self._rpm_limit)) * 100), 1)
+            return float(f"{(max(0.0, (1.0 - used / self._rpm_limit)) * 100):.1f}")
 
     @property
     def requests_in_window(self) -> int:
@@ -129,7 +129,7 @@ class QuotaManager:
             logger.warning(
                 "quota_warning",
                 provider=self._provider_id,
-                usage_pct=round(float(usage_pct * 100), 1),
+                usage_pct=float(f"{(usage_pct * 100):.1f}"),
                 requests_used=len(self._records),
                 rpm_limit=self._rpm_limit,
             )

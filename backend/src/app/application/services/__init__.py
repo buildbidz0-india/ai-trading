@@ -10,7 +10,7 @@ is unavailable, degraded, or quota-exhausted.
 
 from __future__ import annotations
 
-import asyncio
+from typing import Any, Dict, List, Optional, cast
 import time
 from dataclasses import dataclass, field
 
@@ -137,10 +137,12 @@ class AIOrchestrationService:
                 log.error("agent_failed", error=str(r))
 
         # Aggregate
-        analysis = OrchestratedAnalysis(symbol=symbol, results=agent_results)
+        # Filter out exceptions and cast to AgentResult for type checker
+        valid_results = [cast("AgentResult", r) for r in agent_results if not isinstance(r, BaseException)]
+        analysis = OrchestratedAnalysis(symbol=symbol, results=valid_results)
 
         # Extract recommendation from executioner
-        for r in agent_results:
+        for r in valid_results:
             if r.role == AgentRole.EXECUTIONER and r.error is None:
                 analysis.recommended_action = r.output.get("action", "HOLD")
 
@@ -151,14 +153,19 @@ class AIOrchestrationService:
             )
 
         # Publish events
-        for r in agent_results:
+        for r in valid_results:
+            # Decomposed for pedantic type checker
+            out_data: dict[str, Any] = r.output or {}
+            rec_text = out_data.get("recommendation") or out_data.get("action") or ""
+            summary_str = str(rec_text)
+            
             await self._event_bus.publish(
                 AgentAnalysisCompletedEvent(
                     agent_role=r.role.value,
                     provider=r.provider.value,
                     confidence=r.confidence,
                     latency_ms=r.latency_ms,
-                    summary=str(r.output.get("recommendation", r.output.get("action", "")))[:200],
+                    summary=summary_str[:200],
                 )
             )
 
@@ -200,7 +207,7 @@ class AIOrchestrationService:
             # Determine which provider actually handled it
             actual_provider = preferred or LLMProvider.GOOGLE  # the gateway picks
 
-            log.info("agent_completed", latency_ms=round(latency, 1), confidence=confidence)
+            log.info("agent_completed", latency_ms=float(f"{latency:.1f}"), confidence=confidence)
             return AgentResult(
                 role=role,
                 provider=actual_provider,
@@ -210,7 +217,7 @@ class AIOrchestrationService:
             )
         except Exception as exc:
             latency = (time.monotonic() - start) * 1000
-            log.error("agent_error", error=str(exc), latency_ms=round(latency, 1))
+            log.error("agent_error", error=str(exc), latency_ms=float(f"{latency:.1f}"))
             return AgentResult(
                 role=role,
                 provider=preferred or LLMProvider.GOOGLE,
