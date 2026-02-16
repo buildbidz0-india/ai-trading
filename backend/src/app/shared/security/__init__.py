@@ -7,7 +7,8 @@ from typing import Any
 
 import bcrypt
 from jose import JWTError, jwt
-from app.domain.exceptions import AuthenticationError
+from ...domain.exceptions import AuthenticationError
+
 
 
 # ── Password hashing ─────────────────────────────────────────
