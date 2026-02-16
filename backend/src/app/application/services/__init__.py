@@ -165,7 +165,7 @@ class AIOrchestrationService:
                     provider=r.provider.value,
                     confidence=r.confidence,
                     latency_ms=r.latency_ms,
-                    summary=cast(str, summary_str)[0:200],
+                    summary=cast(str, summary_str)[0:200],  # type: ignore[index]
                 )
             )
 
