@@ -1,3 +1,6 @@
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+
 from openai import OpenAI
 client = OpenAI(
     base_url="https://lightning.ai/api/v1/",
