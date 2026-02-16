@@ -1,0 +1,93 @@
+"""AI Trading Platform — Application Configuration."""
+
+from __future__ import annotations
+
+import enum
+from typing import Any
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Environment(str, enum.Enum):
+    DEVELOPMENT = "development"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+
+class Settings(BaseSettings):
+    """Centralised, validated configuration loaded from environment / .env file."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # ── Application ──────────────────────────────────────────
+    app_name: str = "ai-trading-platform"
+    app_env: Environment = Environment.DEVELOPMENT
+    app_debug: bool = False
+    app_host: str = "0.0.0.0"
+    app_port: int = 8000
+    log_level: str = "INFO"
+
+    # ── Security ─────────────────────────────────────────────
+    jwt_secret_key: str = "CHANGE-ME"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    jwt_refresh_token_expire_days: int = 7
+    api_key_header: str = "X-API-Key"
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+
+    # ── Database ─────────────────────────────────────────────
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/trading_platform"
+    database_pool_size: int = 20
+    database_max_overflow: int = 10
+
+    # ── Redis ────────────────────────────────────────────────
+    redis_url: str = "redis://localhost:6379/0"
+    redis_max_connections: int = 50
+
+    # ── Broker ───────────────────────────────────────────────
+    broker_provider: str = "paper"
+    dhan_client_id: str = ""
+    dhan_access_token: str = ""
+    shoonya_user_id: str = ""
+    shoonya_password: str = ""
+    shoonya_api_key: str = ""
+    zerodha_api_key: str = ""
+    zerodha_api_secret: str = ""
+
+    # ── LLM ──────────────────────────────────────────────────
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    google_api_key: str = ""
+
+    # ── Observability ────────────────────────────────────────
+    otel_exporter_otlp_endpoint: str = "http://localhost:4317"
+    otel_service_name: str = "ai-trading-platform"
+    prometheus_enabled: bool = True
+
+    # ── Trading Guardrails ───────────────────────────────────
+    max_order_value_inr: int = 500_000
+    max_position_delta: float = 100.0
+    max_orders_per_minute: int = 10
+    kill_switch_drawdown_pct: float = 5.0
+    paper_trading_mode: bool = True
+
+    # ── Derived helpers ──────────────────────────────────────
+    @property
+    def is_production(self) -> bool:
+        return self.app_env == Environment.PRODUCTION
+
+    @field_validator("log_level")
+    @classmethod
+    def _upper_log_level(cls, v: str) -> str:
+        return v.upper()
+
+
+def get_settings(**overrides: Any) -> Settings:
+    """Factory that allows test-time overrides."""
+    return Settings(**overrides)
