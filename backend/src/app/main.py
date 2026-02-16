@@ -19,6 +19,7 @@ from app.adapters.inbound.rest.routers import (
     health_router,
     orders_router,
     positions_router,
+    providers_router,
     trades_router,
 )
 from app.adapters.inbound.ws import ws_router
@@ -109,6 +110,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(positions_router, prefix=api_v1)
     app.include_router(trades_router, prefix=api_v1)
     app.include_router(ai_router, prefix=api_v1)
+    app.include_router(providers_router, prefix=api_v1)
 
     # ── WebSocket routers ────────────────────────────────────
     app.include_router(ws_router)
