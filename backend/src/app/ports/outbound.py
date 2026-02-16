@@ -83,6 +83,9 @@ class PositionRepository(ABC):
     async def list_open(self) -> list[Position]: ...
 
     @abstractmethod
+    async def list_all(self) -> list[Position]: ...
+
+    @abstractmethod
     async def update(self, position: Position) -> None: ...
 
 
@@ -125,6 +128,14 @@ class CachePort(ABC):
 
     @abstractmethod
     async def publish(self, channel: str, message: str) -> None: ...
+
+    @abstractmethod
+    async def subscribe(self, channel: str) -> Any:
+        """Return an async pub/sub object for the given channel."""
+        ...
+
+    @abstractmethod
+    async def health_check(self) -> bool: ...
 
     @abstractmethod
     async def increment(self, key: str, *, ttl_seconds: int | None = None) -> int: ...

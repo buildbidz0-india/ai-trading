@@ -69,6 +69,36 @@ class PlaceOrderHandler:
         self._guardrails = guardrails
         self._paper_mode = paper_mode
 
+    @staticmethod
+    def _compute_drawdown(open_positions: list) -> float:
+        """Compute account drawdown % from open positions.
+
+        Drawdown = abs(total_unrealised_loss) / total_invested_capital * 100.
+        Returns 0.0 when there are no positions or no losses.
+        """
+        if not open_positions:
+            return 0.0
+
+        total_pnl = 0.0
+        total_capital = 0.0
+
+        for pos in open_positions:
+            qty = float(pos.quantity.value) if hasattr(pos.quantity, "value") else float(pos.quantity)
+            avg_price = float(pos.average_price.amount) if hasattr(pos.average_price, "amount") else float(pos.average_price)
+            market_price = float(pos.market_price.amount) if hasattr(pos.market_price, "amount") else float(getattr(pos, "market_price", avg_price))
+
+            invested = qty * avg_price
+            total_capital += invested
+            total_pnl += (market_price - avg_price) * qty
+
+        if total_capital <= 0:
+            return 0.0
+
+        # Drawdown is the loss expressed as a positive percentage
+        if total_pnl < 0:
+            return abs(total_pnl) / total_capital * 100.0
+        return 0.0
+
     async def handle(self, cmd: PlaceOrderCommand) -> Order:
         log = logger.bind(symbol=cmd.symbol, side=cmd.side, source=cmd.source)
         log.info("place_order_started")
@@ -102,11 +132,14 @@ class PlaceOrderHandler:
         one_minute_ago = datetime.now(timezone.utc) - timedelta(minutes=1)
         recent_count = await self._order_repo.count_since(one_minute_ago)
 
+        # Compute real account drawdown from open positions
+        account_drawdown_pct = self._compute_drawdown(open_positions)
+
         verdict: RiskVerdict = self._risk_engine.evaluate_order(
             order=order,
             open_positions=open_positions,
             recent_order_count=recent_count,
-            account_drawdown_pct=0.0,  # TODO: compute from portfolio
+            account_drawdown_pct=account_drawdown_pct,
         )
 
         if not verdict.accepted:

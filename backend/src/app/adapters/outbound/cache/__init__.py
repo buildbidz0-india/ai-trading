@@ -5,6 +5,8 @@ Provides key-value caching with TTL and pub/sub for live data distribution.
 
 from __future__ import annotations
 
+from typing import Any, AsyncIterator
+
 import redis.asyncio as redis
 import structlog
 
@@ -64,6 +66,16 @@ class RedisCacheAdapter(CachePort):
         except redis.RedisError as exc:
             logger.error("redis_incr_error", key=key, error=str(exc))
             return 0
+
+    async def subscribe(self, channel: str) -> Any:
+        """Return a Redis pubsub object subscribed to the channel."""
+        try:
+            pubsub = self._client.pubsub()
+            await pubsub.subscribe(channel)
+            return pubsub
+        except redis.RedisError as exc:
+            logger.error("redis_subscribe_error", channel=channel, error=str(exc))
+            raise
 
     async def close(self) -> None:
         await self._client.aclose()

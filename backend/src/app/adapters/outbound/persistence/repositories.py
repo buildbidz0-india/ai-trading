@@ -281,6 +281,11 @@ class SQLAlchemyPositionRepository(PositionRepository):
         result = await self._session.execute(stmt)
         return [_model_to_position(r) for r in result.scalars()]
 
+    async def list_all(self) -> list[Position]:
+        stmt = select(PositionModel)
+        result = await self._session.execute(stmt)
+        return [_model_to_position(r) for r in result.scalars()]
+
     async def update(self, position: Position) -> None:
         stmt = (
             update(PositionModel)
@@ -338,9 +343,11 @@ class SQLAlchemyInstrumentRepository(InstrumentRepository):
         await self._session.flush()
 
     async def search(self, query: str, *, limit: int = 20) -> list[Instrument]:
+        # Escape SQL LIKE wildcards in user input
+        safe_query = query.replace("%", r"\%").replace("_", r"\_")
         stmt = (
             select(InstrumentModel)
-            .where(InstrumentModel.symbol.ilike(f"%{query}%"))
+            .where(InstrumentModel.symbol.ilike(f"%{safe_query}%"))
             .limit(limit)
         )
         result = await self._session.execute(stmt)

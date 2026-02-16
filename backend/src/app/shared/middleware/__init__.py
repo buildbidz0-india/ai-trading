@@ -91,17 +91,16 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Simple sliding-window rate limiter backed by in-memory counter.
+    """Sliding-window rate limiter backed by Redis.
 
-    For production, replace the in-memory store with a Redis-backed
-    implementation using the CachePort.
+    Uses CachePort.increment() for distributed counting across workers.
+    Falls back to allowing the request if Redis is unavailable.
     """
 
     def __init__(self, app: object, max_requests: int = 100, window_seconds: int = 60) -> None:  # type: ignore[override]
         super().__init__(app)  # type: ignore[arg-type]
         self._max = max_requests
         self._window = window_seconds
-        self._store: dict[str, list[float]] = {}
 
     async def dispatch(
         self,
@@ -109,21 +108,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         client_ip = request.client.host if request.client else "unknown"
-        now = time.time()
 
-        # Clean old entries
-        timestamps = self._store.get(client_ip, [])
-        timestamps = [t for t in timestamps if now - t < self._window]
+        # Use Redis for distributed rate limiting
+        try:
+            from app.dependencies import get_cache
 
-        if len(timestamps) >= self._max:
-            return Response(
-                content='{"code":"RATE_LIMITED","message":"Too many requests"}',
-                status_code=429,
-                media_type="application/json",
-                headers={"Retry-After": str(self._window)},
-            )
+            cache = get_cache()
+            key = f"rate_limit:{client_ip}"
+            count = await cache.increment(key, ttl_seconds=self._window)
 
-        timestamps.append(now)
-        self._store[client_ip] = timestamps
+            if count > self._max:
+                return Response(
+                    content='{"code":"RATE_LIMITED","message":"Too many requests"}',
+                    status_code=429,
+                    media_type="application/json",
+                    headers={"Retry-After": str(self._window)},
+                )
+        except Exception:
+            # If Redis is unavailable, allow the request (fail-open)
+            logger.warning("rate_limit_redis_unavailable", client_ip=client_ip)
 
         return await call_next(request)

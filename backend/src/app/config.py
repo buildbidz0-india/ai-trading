@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -112,6 +112,30 @@ class Settings(BaseSettings):
     @classmethod
     def _upper_log_level(cls, v: str) -> str:
         return v.upper()
+
+    @field_validator("database_url")
+    @classmethod
+    def _validate_database_url(cls, v: str) -> str:
+        if not v.startswith(("postgresql", "sqlite")):
+            raise ValueError("database_url must start with 'postgresql' or 'sqlite'")
+        return v
+
+    @model_validator(mode="after")
+    def _guard_production_secrets(self) -> Settings:
+        """Prevent production from running with insecure defaults."""
+        if self.app_env == Environment.PRODUCTION:
+            if self.jwt_secret_key in ("CHANGE-ME", ""):
+                raise ValueError(
+                    "jwt_secret_key must be set to a secure value in production"
+                )
+            if self.paper_trading_mode:
+                import warnings
+                warnings.warn(
+                    "paper_trading_mode is ON in production — set to false for live trading",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        return self
 
 
 def get_settings(**overrides: Any) -> Settings:

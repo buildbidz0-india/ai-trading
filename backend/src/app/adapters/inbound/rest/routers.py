@@ -104,7 +104,12 @@ async def create_token(body: TokenRequest) -> TokenResponse:
 
         raise AuthenticationError("Invalid credentials")
 
-    # In demo mode, accept any password
+    # Verify password using bcrypt
+    if not verify_password(body.password, user["password_hash"]):
+        from app.domain.exceptions import AuthenticationError
+
+        raise AuthenticationError("Invalid credentials")
+
     token_data = {"sub": user["sub"], "role": user["role"]}
     access = create_access_token(
         token_data,

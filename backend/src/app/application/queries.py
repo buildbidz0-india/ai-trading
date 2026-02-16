@@ -39,7 +39,7 @@ class GetPositionsHandler:
         logger.debug("get_positions", open_only=query.open_only)
         if query.open_only:
             return await self._repo.list_open()
-        return await self._repo.list_open()  # extend with all-positions query
+        return await self._repo.list_all()
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -137,30 +137,35 @@ export function Shell({ children }: ShellProps) {
     )
 }
 
+import Link from "next/link"
+
 function NavItem({ icon: Icon, label, isOpen, active, href }: { icon: any, label: string, isOpen: boolean, active?: boolean, href: string }) {
     if (!isOpen) {
         return (
-            <a href={href} className="block mb-1" title={label}>
-                <Button
-                    variant={active ? "secondary" : "ghost"}
-                    size="icon"
-                    className={cn("w-full", active && "shadow-md bg-white/5")}
+            <Link href={href} className="block mb-1" title={label}>
+                <div
+                    className={cn(
+                        "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 size-9 hover:bg-accent hover:text-accent-foreground border bg-background shadow-xs w-full",
+                        active ? "bg-secondary text-secondary-foreground shadow-md bg-white/5" : "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
+                    )}
                 >
                     <Icon className={cn("size-5", active ? "text-primary" : "text-muted-foreground")} />
-                </Button>
-            </a>
+                </div>
+            </Link>
         )
     }
 
     return (
-        <a href={href} className="block mb-1">
-            <Button
-                variant={active ? "secondary" : "ghost"}
-                className={cn("w-full justify-start gap-3", active && "shadow-sm bg-white/5 border border-white/5")}
+        <Link href={href} className="block mb-1">
+            <div
+                className={cn(
+                    "inline-flex items-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 h-9 px-4 py-2 hover:bg-accent hover:text-accent-foreground w-full justify-start",
+                    active ? "bg-secondary text-secondary-foreground shadow-sm bg-white/5 border border-white/5" : "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
+                )}
             >
                 <Icon className={cn("size-4", active ? "text-primary" : "text-muted-foreground")} />
                 <span className={active ? "font-medium" : "font-normal text-muted-foreground"}>{label}</span>
-            </Button>
-        </a>
+            </div>
+        </Link>
     )
 }
