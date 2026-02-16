@@ -2,6 +2,7 @@
 import * as React from "react"
 import { createChart, ColorType, IChartApi } from "lightweight-charts"
 import { AcrylicCard } from "@/components/ui/AcrylicCard"
+import { useStore } from "@/lib/store"
 
 export function ChartComponent() {
     const chartContainerRef = React.useRef<HTMLDivElement>(null)
@@ -67,10 +68,14 @@ export function ChartComponent() {
         }
     }, [])
 
+    const { selectedTicker } = useStore()
+
+    // ... (rest of useEffect)
+
     return (
         <AcrylicCard variant="default" className="p-1 h-[450px]">
             <div className="p-3 border-b border-white/5 flex justify-between items-center">
-                <div className="text-sm font-medium">NIFTY 50 Index</div>
+                <div className="text-sm font-medium">{selectedTicker} Index</div>
                 <div className="text-xs text-muted-foreground">15m</div>
             </div>
             <div ref={chartContainerRef} className="w-full h-[400px]" />

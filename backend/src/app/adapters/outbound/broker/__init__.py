@@ -1,7 +1,7 @@
-"""Paper trading broker adapter — no real orders.
+"""Broker adapters package.
 
-This adapter simulates broker behaviour for development and testing.
-It implements BrokerPort with in-memory state.
+Provides paper (simulation) and production broker adapters that
+implement the ``BrokerPort`` interface.
 """
 
 from __future__ import annotations
@@ -17,6 +17,9 @@ from app.ports.outbound import BrokerPort
 logger = structlog.get_logger(__name__)
 
 
+# ═══════════════════════════════════════════════════════════════
+#  Paper (simulation) broker
+# ═══════════════════════════════════════════════════════════════
 class PaperBrokerAdapter(BrokerPort):
     """Simulated broker for paper trading (Ghost Mode).
 
@@ -63,3 +66,18 @@ class PaperBrokerAdapter(BrokerPort):
     async def get_option_chain(self, symbol: str, expiry: str) -> dict[str, Any]:
         logger.info("paper_option_chain_request", symbol=symbol, expiry=expiry)
         return {"symbol": symbol, "expiry": expiry, "entries": []}
+
+
+# ── Re-export production adapters ─────────────────────────────
+from app.adapters.outbound.broker.dhan import DhanBrokerAdapter  # noqa: E402
+from app.adapters.outbound.broker.shoonya import ShoonyaBrokerAdapter  # noqa: E402
+from app.adapters.outbound.broker.zerodha import ZerodhaBrokerAdapter  # noqa: E402
+
+__all__ = [
+    "BrokerPort",
+    "PaperBrokerAdapter",
+    "DhanBrokerAdapter",
+    "ZerodhaBrokerAdapter",
+    "ShoonyaBrokerAdapter",
+]
+

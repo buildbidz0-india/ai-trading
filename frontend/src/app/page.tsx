@@ -4,8 +4,8 @@ import { ChartComponent } from "@/components/ui/Chart";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Badge } from "lucide-react"; // Wait, Badge is usually a component, let's just use div or install Badge
-// Actually I don't have Badge component, I will use spans with classes.
+import { Watchlist } from "@/components/ui/Watchlist";
+import { OrderEntry } from "@/components/ui/OrderEntry";
 
 export default function Home() {
   return (
@@ -39,21 +39,8 @@ export default function Home() {
 
         {/* Right Column: Trade Panel & AI Log */}
         <div className="col-span-12 lg:col-span-3 flex flex-col gap-6">
-          {/* Order Entry */}
-          <AcrylicCard variant="solid" className="p-4 space-y-4">
-            <div className="font-semibold border-b pb-2 border-border">Quick Trade</div>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" className="border-green-500/50 hover:bg-green-500/10 text-green-500">CALL</Button>
-              <Button variant="outline" className="border-red-500/50 hover:bg-red-500/10 text-red-500">PUT</Button>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs text-muted-foreground">Quantity</label>
-              <Input type="number" defaultValue="50" className="fluent-input" />
-            </div>
-            <Button className="w-full bg-primary text-primary-foreground shadow-lg hover:shadow-primary/25">
-              Execute Order
-            </Button>
-          </AcrylicCard>
+          <Watchlist />
+          <OrderEntry />
 
           {/* AI Agent Log */}
           <AcrylicCard className="flex-1 flex flex-col p-4 min-h-[300px]">

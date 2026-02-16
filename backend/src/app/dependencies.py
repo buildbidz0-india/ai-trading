@@ -13,7 +13,12 @@ from typing import Any, AsyncGenerator
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.adapters.outbound.broker import PaperBrokerAdapter
+from app.adapters.outbound.broker import (
+    DhanBrokerAdapter,
+    PaperBrokerAdapter,
+    ShoonyaBrokerAdapter,
+    ZerodhaBrokerAdapter,
+)
 from app.adapters.outbound.cache import RedisCacheAdapter
 from app.adapters.outbound.event_bus import InProcessEventBus
 from app.adapters.outbound.llm import ResilientLLMAdapter, build_provider_configs
@@ -55,7 +60,7 @@ def get_cached_settings() -> Settings:
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 _cache: RedisCacheAdapter | None = None
 _event_bus: InProcessEventBus | None = None
-_broker: PaperBrokerAdapter | None = None
+_broker: PaperBrokerAdapter | DhanBrokerAdapter | ZerodhaBrokerAdapter | ShoonyaBrokerAdapter | None = None
 _llm: ResilientLLMAdapter | None = None
 
 
@@ -82,10 +87,30 @@ def get_event_bus() -> InProcessEventBus:
     return _event_bus
 
 
-def get_broker() -> PaperBrokerAdapter:
+def get_broker(settings: Settings | None = None):  # type: ignore[no-untyped-def]
+    """Factory that selects broker adapter based on BROKER_PROVIDER config."""
     global _broker
     if _broker is None:
-        _broker = PaperBrokerAdapter()
+        s = settings or get_cached_settings()
+        provider = s.broker_provider.lower()
+        if provider == "dhan":
+            _broker = DhanBrokerAdapter(
+                client_id=s.dhan_client_id,
+                access_token=s.dhan_access_token,
+            )
+        elif provider == "zerodha":
+            _broker = ZerodhaBrokerAdapter(
+                api_key=s.zerodha_api_key,
+                api_secret=s.zerodha_api_secret,
+            )
+        elif provider == "shoonya":
+            _broker = ShoonyaBrokerAdapter(
+                user_id=s.shoonya_user_id,
+                password=s.shoonya_password,
+                api_key=s.shoonya_api_key,
+            )
+        else:
+            _broker = PaperBrokerAdapter()
     return _broker
 
 
