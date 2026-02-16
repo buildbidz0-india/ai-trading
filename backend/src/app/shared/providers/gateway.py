@@ -130,10 +130,10 @@ class ResilientProviderGateway:
             attempted.add(pid)
 
             # Try this provider with retries + key rotation
-            # Explicit split of coroutine and await for type-checker clarity
-            provider_coro = self._try_provider(
+            # Force-cast to Awaitable to satisfy overly pedantic type checkers
+            provider_coro = cast(Awaitable[Any], self._try_provider(
                 provider_cfg, request_fn, estimated_tokens, errors
-            )
+            ))
             provider_result = await provider_coro
             if provider_result is not _SENTINEL:
                 # Emit failover metric if this wasn't the first choice

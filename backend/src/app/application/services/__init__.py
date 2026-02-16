@@ -8,9 +8,9 @@ but falls through the resilient gateway's failover chain if that provider
 is unavailable, degraded, or quota-exhausted.
 """
 
-from __future__ import annotations
-
 from typing import Any, Dict, List, Optional, cast
+
+import asyncio
 import time
 from dataclasses import dataclass, field
 
@@ -165,7 +165,7 @@ class AIOrchestrationService:
                     provider=r.provider.value,
                     confidence=r.confidence,
                     latency_ms=r.latency_ms,
-                    summary=summary_str[:200],
+                    summary=cast(str, summary_str)[0:200],
                 )
             )
 
