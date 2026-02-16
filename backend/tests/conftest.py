@@ -5,6 +5,10 @@ from __future__ import annotations
 import pytest
 import sys
 import os
+import bcrypt
+# Patch bcrypt for passlib compatibility
+bcrypt.__about__ = type("about", (object,), {"__version__": bcrypt.__version__})
+
 from decimal import Decimal
 
 # Add src to path so imports work

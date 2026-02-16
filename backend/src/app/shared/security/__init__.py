@@ -5,22 +5,26 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
-
 from app.domain.exceptions import AuthenticationError
 
 
 # ── Password hashing ─────────────────────────────────────────
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    pwd_bytes = password.encode("utf-8")
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    plain_bytes = plain.encode("utf-8")
+    hashed_bytes = hashed.encode("utf-8")
+    try:
+        return bcrypt.checkpw(plain_bytes, hashed_bytes)
+    except ValueError:
+        return False
 
 
 # ── JWT ──────────────────────────────────────────────────────
