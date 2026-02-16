@@ -10,20 +10,47 @@ import {
     Settings,
     Search,
     Bell,
-    Menu
+    Menu,
+    LogOut
 } from "lucide-react"
+import { usePathname } from "next/navigation"
+import Link from "next/link"
+import { logout } from "@/lib/auth"
+import { useStore } from "@/lib/store"
 
 interface ShellProps {
     children: React.ReactNode
 }
 
-import { usePathname } from "next/navigation"
-
 export function Shell({ children }: ShellProps) {
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(true)
     const [isSearchOpen, setIsSearchOpen] = React.useState(false)
     const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false)
+    const [isProfileOpen, setIsProfileOpen] = React.useState(false)
     const pathname = usePathname()
+    const marketState = useStore((s) => s.marketState)
+    const selectedTicker = useStore((s) => s.selectedTicker)
+    const watchlist = useStore((s) => s.watchlist)
+
+    const ticker = watchlist.find(t => t.symbol === selectedTicker)
+
+    // Close dropdowns on outside click
+    React.useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setIsSearchOpen(false)
+                setIsNotificationsOpen(false)
+                setIsProfileOpen(false)
+            }
+            // Ctrl+K to open search
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault()
+                setIsSearchOpen(true)
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [])
 
     return (
         <div className="flex h-screen w-full overflow-hidden bg-background relative">
@@ -64,7 +91,25 @@ export function Shell({ children }: ShellProps) {
                     <NavItem href="/settings" icon={Settings} label="Settings" isOpen={isSidebarOpen} active={pathname === "/settings"} />
                 </nav>
 
-                <div className="p-2 border-t border-white/5">
+                {/* Logout + Collapse */}
+                <div className="p-2 border-t border-white/5 space-y-1">
+                    {isSidebarOpen ? (
+                        <button
+                            onClick={logout}
+                            className="w-full flex items-center gap-2 px-4 py-2 rounded-md text-sm text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        >
+                            <LogOut className="size-4" />
+                            <span>Sign Out</span>
+                        </button>
+                    ) : (
+                        <button
+                            onClick={logout}
+                            className="w-full flex items-center justify-center py-2 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            title="Sign Out"
+                        >
+                            <LogOut className="size-4" />
+                        </button>
+                    )}
                     <Button
                         variant="ghost"
                         size="icon"
@@ -81,8 +126,22 @@ export function Shell({ children }: ShellProps) {
                 {/* Header */}
                 <header className="mica-material h-16 border-b flex items-center justify-between px-6 z-10 sticky top-0">
                     <div className="text-sm text-muted-foreground font-medium flex items-center gap-2">
-                        <span className={cn("w-2 h-2 rounded-full", "bg-green-500 animate-pulse")} />
-                        NIFTY 50 • <span className="text-green-500 font-mono">22,145.00 (+0.4%)</span>
+                        <span className={cn(
+                            "w-2 h-2 rounded-full",
+                            marketState.isConnected ? "bg-green-500 animate-pulse" : "bg-yellow-500"
+                        )} />
+                        {ticker ? (
+                            <>
+                                {ticker.symbol} • <span className={cn("font-mono", ticker.change >= 0 ? "text-green-500" : "text-red-500")}>
+                                    ₹{ticker.price.toLocaleString('en-IN')} ({ticker.change >= 0 ? '+' : ''}{ticker.changePercent.toFixed(2)}%)
+                                </span>
+                            </>
+                        ) : (
+                            <span>NIFTY 50 • <span className="text-green-500 font-mono">22,145.00 (+0.4%)</span></span>
+                        )}
+                        {marketState.latency > 0 && (
+                            <span className="text-xs text-muted-foreground/50 ml-2">{marketState.latency}ms</span>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-4">
@@ -124,7 +183,29 @@ export function Shell({ children }: ShellProps) {
                             )}
                         </div>
 
-                        <div className="size-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 ring-2 ring-background cursor-pointer hover:ring-primary/50 transition-all" />
+                        {/* Profile Menu */}
+                        <div className="relative">
+                            <div
+                                className="size-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 ring-2 ring-background cursor-pointer hover:ring-primary/50 transition-all"
+                                onClick={() => setIsProfileOpen(!isProfileOpen)}
+                            />
+                            {isProfileOpen && (
+                                <div className="absolute right-0 top-12 w-48 z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+                                    <AcrylicCard className="p-1 overflow-hidden shadow-2xl ring-1 ring-border/50">
+                                        <div className="px-3 py-2 text-xs text-muted-foreground border-b border-border/50">
+                                            Signed in as <span className="font-medium text-foreground">admin</span>
+                                        </div>
+                                        <button
+                                            onClick={logout}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                                        >
+                                            <LogOut className="size-3.5" />
+                                            Sign Out
+                                        </button>
+                                    </AcrylicCard>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </header>
 
@@ -136,8 +217,6 @@ export function Shell({ children }: ShellProps) {
         </div>
     )
 }
-
-import Link from "next/link"
 
 function NavItem({ icon: Icon, label, isOpen, active, href }: { icon: any, label: string, isOpen: boolean, active?: boolean, href: string }) {
     if (!isOpen) {

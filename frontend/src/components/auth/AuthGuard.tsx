@@ -7,30 +7,42 @@ import { getToken } from "@/lib/auth";
 export function AuthGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
-    const [authorized, setAuthorized] = useState(false);
+    const [state, setState] = useState<'loading' | 'authorized' | 'redirecting'>('loading');
+
+    const publicPaths = ['/login', '/register'];
 
     useEffect(() => {
-        // Check token on mount and route change
         const token = getToken();
 
-        // Public routes that don't need auth
-        const publicPaths = ['/login', '/register'];
-
         if (!token && !publicPaths.includes(pathname)) {
-            setAuthorized(false);
+            setState('redirecting');
             router.push('/login');
         } else {
-            setAuthorized(true);
+            setState('authorized');
         }
     }, [pathname, router]);
 
-    // Show nothing while checking (or a loading spinner)
-    // If we are on a public page, we can render immediately or wait for the check?
-    // Ideally, valid token + public page -> redirect to dashboard? Optional.
+    if (state === 'loading' || state === 'redirecting') {
+        if (publicPaths.includes(pathname)) {
+            return <>{children}</>;
+        }
 
-    // If we are unauthorized and on a protected page, we render nothing until redirect happens.
-    if (!authorized && !['/login', '/register'].includes(pathname)) {
-        return null;
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background">
+                <div className="flex flex-col items-center gap-4">
+                    {/* Animated logo */}
+                    <div className="relative">
+                        <div className="size-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg flex items-center justify-center text-white font-bold text-xl animate-pulse">
+                            T
+                        </div>
+                        <div className="absolute -inset-2 rounded-2xl border-2 border-indigo-500/20 animate-ping" />
+                    </div>
+                    <div className="text-sm text-muted-foreground animate-pulse">
+                        {state === 'redirecting' ? 'Redirecting to login...' : 'Loading...'}
+                    </div>
+                </div>
+            </div>
+        );
     }
 
     return <>{children}</>;
