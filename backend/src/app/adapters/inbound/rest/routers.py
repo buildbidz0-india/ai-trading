@@ -319,3 +319,51 @@ async def trigger_analysis(
         overall_confidence=result.overall_confidence,
         timestamp=datetime.now(timezone.utc),
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Provider Health (Admin)
+# ═══════════════════════════════════════════════════════════════
+from app.dependencies import get_llm  # noqa: E402
+from app.adapters.outbound.llm import ResilientLLMAdapter  # noqa: E402
+
+providers_router = APIRouter(prefix="/providers", tags=["Provider Health"])
+
+
+@providers_router.get("/health")
+async def provider_health(
+    _user: dict = Depends(get_current_user),
+) -> list[dict]:
+    """Get health snapshots for all configured API providers."""
+    llm = get_llm()
+    healths = llm.gateway.get_all_health()
+    return [
+        {
+            "provider_id": h.provider_id,
+            "status": h.status.value,
+            "total_requests": h.total_requests,
+            "total_successes": h.total_successes,
+            "total_failures": h.total_failures,
+            "consecutive_failures": h.consecutive_failures,
+            "success_rate": h.success_rate,
+            "latency_p50_ms": h.latency_p50_ms,
+            "latency_p95_ms": h.latency_p95_ms,
+            "latency_p99_ms": h.latency_p99_ms,
+            "last_error": h.last_error,
+            "circuit_state": h.circuit_state,
+            "quota_remaining_pct": h.quota_remaining_pct,
+            "current_key_index": h.current_key_index,
+        }
+        for h in healths
+    ]
+
+
+@providers_router.post("/{provider_id}/reset")
+async def reset_provider(
+    provider_id: str,
+    _user: dict = Depends(get_current_user),
+) -> dict:
+    """Admin: reset circuit breaker and quota for a provider."""
+    llm = get_llm()
+    llm.gateway.reset_provider(provider_id)
+    return {"status": "reset", "provider_id": provider_id}

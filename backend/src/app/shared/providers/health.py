@@ -116,7 +116,7 @@ class ProviderHealthTracker:
             total_successes=self._total_successes,
             total_failures=self._total_failures,
             consecutive_failures=self._consecutive_failures,
-            success_rate=round(success_rate, 4),
+            success_rate=round(float(success_rate), 4),
             latency_p50_ms=self._percentile(0.50),
             latency_p95_ms=self._percentile(0.95),
             latency_p99_ms=self._percentile(0.99),
@@ -139,4 +139,4 @@ class ProviderHealthTracker:
                 return 0.0
             idx = int(len(self._latencies) * p)
             idx = min(idx, len(self._latencies) - 1)
-            return round(self._latencies[idx], 2)
+            return round(float(self._latencies[idx]), 2)

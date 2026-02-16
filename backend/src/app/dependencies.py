@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.adapters.outbound.broker import PaperBrokerAdapter
 from app.adapters.outbound.cache import RedisCacheAdapter
 from app.adapters.outbound.event_bus import InProcessEventBus
-from app.adapters.outbound.llm import MultiProviderLLMAdapter
+from app.adapters.outbound.llm import ResilientLLMAdapter, build_provider_configs
 from app.adapters.outbound.persistence.database import create_session_factory
 from app.adapters.outbound.persistence.repositories import (
     SQLAlchemyInstrumentRepository,
@@ -41,6 +41,7 @@ from app.config import Settings, get_settings
 from app.domain.services.guardrails import OrderGuardrails
 from app.domain.services.risk_engine import RiskEngine, RiskLimits
 from app.domain.value_objects import Money
+from app.shared.providers.types import RoutingStrategy
 from app.shared.security import decode_token
 
 
@@ -55,7 +56,7 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 _cache: RedisCacheAdapter | None = None
 _event_bus: InProcessEventBus | None = None
 _broker: PaperBrokerAdapter | None = None
-_llm: MultiProviderLLMAdapter | None = None
+_llm: ResilientLLMAdapter | None = None
 
 
 def get_session_factory(settings: Settings | None = None) -> async_sessionmaker[AsyncSession]:
@@ -88,14 +89,46 @@ def get_broker() -> PaperBrokerAdapter:
     return _broker
 
 
-def get_llm(settings: Settings | None = None) -> MultiProviderLLMAdapter:
+def get_llm(settings: Settings | None = None) -> ResilientLLMAdapter:
+    """Create or return the singleton resilient LLM adapter.
+
+    Builds ProviderConfig objects from settings, then constructs
+    the gateway-backed adapter with rotation, failover, and health.
+    """
     global _llm
     if _llm is None:
         s = settings or get_cached_settings()
-        _llm = MultiProviderLLMAdapter(
+
+        # Parse routing strategy
+        strategy_map = {v.value: v for v in RoutingStrategy}
+        strategy = strategy_map.get(s.llm_routing_strategy, RoutingStrategy.PRIORITY_FAILOVER)
+
+        # Build provider configs from settings
+        provider_configs = build_provider_configs(
             anthropic_api_key=s.anthropic_api_key,
             openai_api_key=s.openai_api_key,
             google_api_key=s.google_api_key,
+            anthropic_api_keys=s.anthropic_api_keys,
+            openai_api_keys=s.openai_api_keys,
+            google_api_keys=s.google_api_keys,
+            anthropic_rpm=s.anthropic_rpm,
+            openai_rpm=s.openai_rpm,
+            google_rpm=s.google_rpm,
+            anthropic_tpm=s.anthropic_tpm,
+            openai_tpm=s.openai_tpm,
+            google_tpm=s.google_tpm,
+            timeout_s=s.provider_timeout_seconds,
+            cb_failure_threshold=s.circuit_breaker_failure_threshold,
+            cb_cooldown_s=s.circuit_breaker_cooldown_seconds,
+            priority_order=s.llm_provider_priority,
+        )
+
+        _llm = ResilientLLMAdapter(
+            provider_configs,
+            routing_strategy=strategy,
+            timeout=s.provider_timeout_seconds,
+            backoff_base=s.provider_backoff_base,
+            backoff_max=s.provider_backoff_max,
         )
     return _llm
 

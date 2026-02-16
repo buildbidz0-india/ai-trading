@@ -119,5 +119,5 @@ class CircuitBreaker:
                 logger.info(
                     "circuit_breaker_half_open",
                     provider=self._provider_id,
-                    elapsed_s=round(elapsed, 1),
+                    elapsed_s=round(float(elapsed), 1),
                 )

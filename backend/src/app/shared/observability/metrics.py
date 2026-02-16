@@ -68,3 +68,35 @@ GUARDRAIL_VIOLATIONS = Counter(
     "guardrail_violations_total",
     "Orders flagged by guardrails",
 )
+
+# ── Provider resilience metrics ──────────────────────────────
+PROVIDER_REQUESTS = Counter(
+    "provider_requests_total",
+    "Total requests to API providers",
+    ["provider", "status"],
+)
+
+PROVIDER_LATENCY = Histogram(
+    "provider_latency_seconds",
+    "API provider response latency",
+    ["provider"],
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
+)
+
+PROVIDER_FAILOVERS = Counter(
+    "provider_failovers_total",
+    "Provider failover events",
+    ["from_provider", "to_provider"],
+)
+
+CIRCUIT_BREAKER_STATE = Gauge(
+    "circuit_breaker_state",
+    "Circuit breaker state (0=closed, 1=half_open, 2=open)",
+    ["provider"],
+)
+
+QUOTA_REMAINING = Gauge(
+    "provider_quota_remaining_pct",
+    "Remaining quota percentage",
+    ["provider"],
+)

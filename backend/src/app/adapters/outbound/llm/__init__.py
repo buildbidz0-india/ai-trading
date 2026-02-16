@@ -1,8 +1,8 @@
-"""LLM provider adapters with retry, circuit-breaker, and structured output.
+"""LLM provider adapter — backed by the ResilientProviderGateway.
 
-Each adapter wraps a specific LLM API (Anthropic, OpenAI, Google) and
-returns parsed JSON responses.  A router dispatches to the correct adapter
-based on the ``LLMProvider`` enum.
+Each provider-specific HTTP call is a pure function.  The gateway
+handles rotation, failover, circuit breaking, quota, key rotation,
+and health tracking autonomously.
 """
 
 from __future__ import annotations
@@ -12,77 +12,163 @@ from typing import Any
 
 import httpx
 import structlog
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 from app.domain.enums import LLMProvider
 from app.ports.outbound import LLMPort
+from app.shared.providers.gateway import ResilientProviderGateway
+from app.shared.providers.types import ProviderConfig, RoutingStrategy
 
 logger = structlog.get_logger(__name__)
 
-_RETRY_DECORATOR = retry(
-    retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.ConnectError)),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
-    reraise=True,
-)
+
+def build_provider_configs(
+    *,
+    anthropic_api_key: str = "",
+    openai_api_key: str = "",
+    google_api_key: str = "",
+    anthropic_api_keys: str = "",
+    openai_api_keys: str = "",
+    google_api_keys: str = "",
+    anthropic_rpm: int = 50,
+    openai_rpm: int = 60,
+    google_rpm: int = 60,
+    anthropic_tpm: int = 0,
+    openai_tpm: int = 0,
+    google_tpm: int = 0,
+    timeout_s: float = 60.0,
+    cb_failure_threshold: int = 5,
+    cb_cooldown_s: float = 30.0,
+    priority_order: str = "google,anthropic,openai",
+) -> list[ProviderConfig]:
+    """Build ProviderConfig list from settings values."""
+
+    def _parse_keys(multi: str, single: str) -> tuple[str, ...]:
+        """Merge comma-separated multi-key string with single key."""
+        keys: list[str] = []
+        if multi:
+            keys.extend(k.strip() for k in multi.split(",") if k.strip())
+        if single and single not in keys:
+            keys.append(single.strip())
+        return tuple(keys)
+
+    # Parse priority order
+    priority_map: dict[str, int] = {}
+    for idx, name in enumerate(priority_order.split(",")):
+        priority_map[name.strip().lower()] = idx + 1
+
+    configs = [
+        ProviderConfig(
+            provider_id="anthropic",
+            api_keys=_parse_keys(anthropic_api_keys, anthropic_api_key),
+            priority=priority_map.get("anthropic", 10),
+            weight=3,
+            rpm_limit=anthropic_rpm,
+            tpm_limit=anthropic_tpm,
+            timeout_s=timeout_s,
+            cb_failure_threshold=cb_failure_threshold,
+            cb_cooldown_s=cb_cooldown_s,
+            metadata={"model": "claude-sonnet-4-20250514", "api_version": "2023-06-01"},
+        ),
+        ProviderConfig(
+            provider_id="openai",
+            api_keys=_parse_keys(openai_api_keys, openai_api_key),
+            priority=priority_map.get("openai", 10),
+            weight=3,
+            rpm_limit=openai_rpm,
+            tpm_limit=openai_tpm,
+            timeout_s=timeout_s,
+            cb_failure_threshold=cb_failure_threshold,
+            cb_cooldown_s=cb_cooldown_s,
+            metadata={"model": "gpt-4o"},
+        ),
+        ProviderConfig(
+            provider_id="google",
+            api_keys=_parse_keys(google_api_keys, google_api_key),
+            priority=priority_map.get("google", 10),
+            weight=3,
+            rpm_limit=google_rpm,
+            tpm_limit=google_tpm,
+            timeout_s=timeout_s,
+            cb_failure_threshold=cb_failure_threshold,
+            cb_cooldown_s=cb_cooldown_s,
+            metadata={"model": "gemini-2.0-flash"},
+        ),
+    ]
+
+    return configs
 
 
-class MultiProviderLLMAdapter(LLMPort):
-    """Routes LLM calls to the appropriate provider adapter."""
+class ResilientLLMAdapter(LLMPort):
+    """LLM adapter with autonomous failover, rotation, and health tracking.
+
+    Replaces the old ``MultiProviderLLMAdapter``.  The caller can request
+    a *preferred* provider, but the gateway will transparently fail over
+    to alternatives if the preferred provider is unavailable.
+    """
 
     def __init__(
         self,
+        provider_configs: list[ProviderConfig],
         *,
-        anthropic_api_key: str = "",
-        openai_api_key: str = "",
-        google_api_key: str = "",
+        routing_strategy: RoutingStrategy = RoutingStrategy.PRIORITY_FAILOVER,
         timeout: float = 60.0,
+        backoff_base: float = 0.5,
+        backoff_max: float = 8.0,
     ) -> None:
-        self._keys = {
-            LLMProvider.ANTHROPIC: anthropic_api_key,
-            LLMProvider.OPENAI: openai_api_key,
-            LLMProvider.GOOGLE: google_api_key,
-        }
-        self._timeout = timeout
         self._client = httpx.AsyncClient(timeout=timeout)
+        self._gateway = ResilientProviderGateway(
+            provider_configs,
+            strategy=routing_strategy,
+            backoff_base=backoff_base,
+            backoff_max=backoff_max,
+        )
+
+    @property
+    def gateway(self) -> ResilientProviderGateway:
+        """Expose gateway for health inspection / admin reset."""
+        return self._gateway
 
     async def invoke(
         self,
         *,
-        provider: LLMProvider,
+        provider: LLMProvider | None = None,
         system_prompt: str,
         user_prompt: str,
         temperature: float = 0.0,
         max_tokens: int = 4096,
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        api_key = self._keys.get(provider, "")
-        if not api_key:
-            logger.warning("llm_no_api_key", provider=provider.value)
-            return {"error": f"No API key for {provider.value}", "confidence": 0.0}
+        """Invoke an LLM — provider is now a *soft preference*, not a hard requirement."""
 
-        if provider == LLMProvider.ANTHROPIC:
-            return await self._invoke_anthropic(
-                api_key, system_prompt, user_prompt, temperature, max_tokens
-            )
-        elif provider == LLMProvider.OPENAI:
-            return await self._invoke_openai(
-                api_key, system_prompt, user_prompt, temperature, max_tokens,
-                response_format,
-            )
-        elif provider == LLMProvider.GOOGLE:
-            return await self._invoke_google(
-                api_key, system_prompt, user_prompt, temperature, max_tokens
-            )
-        else:
-            return {"error": f"Unknown provider: {provider}", "confidence": 0.0}
+        preferred = provider.value if provider else None
 
-    @_RETRY_DECORATOR
+        async def _call(cfg: ProviderConfig, api_key: str) -> dict[str, Any]:
+            if cfg.provider_id == "anthropic":
+                return await self._invoke_anthropic(
+                    api_key, system_prompt, user_prompt, temperature, max_tokens,
+                    model=cfg.metadata.get("model", "claude-sonnet-4-20250514"),
+                )
+            elif cfg.provider_id == "openai":
+                return await self._invoke_openai(
+                    api_key, system_prompt, user_prompt, temperature, max_tokens,
+                    response_format,
+                    model=cfg.metadata.get("model", "gpt-4o"),
+                )
+            elif cfg.provider_id == "google":
+                return await self._invoke_google(
+                    api_key, system_prompt, user_prompt, temperature, max_tokens,
+                    model=cfg.metadata.get("model", "gemini-2.0-flash"),
+                )
+            else:
+                raise ValueError(f"Unknown provider: {cfg.provider_id}")
+
+        return await self._gateway.execute(
+            _call,
+            estimated_tokens=max_tokens,
+            preferred_provider=preferred,
+        )
+
+    # ── Provider HTTP calls (pure, no retry logic) ───────────
     async def _invoke_anthropic(
         self,
         api_key: str,
@@ -90,8 +176,9 @@ class MultiProviderLLMAdapter(LLMPort):
         user_prompt: str,
         temperature: float,
         max_tokens: int,
+        *,
+        model: str = "claude-sonnet-4-20250514",
     ) -> dict[str, Any]:
-        log = logger.bind(provider="anthropic")
         response = await self._client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
@@ -100,7 +187,7 @@ class MultiProviderLLMAdapter(LLMPort):
                 "content-type": "application/json",
             },
             json={
-                "model": "claude-sonnet-4-20250514",
+                "model": model,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "system": system_prompt,
@@ -110,10 +197,8 @@ class MultiProviderLLMAdapter(LLMPort):
         response.raise_for_status()
         data = response.json()
         text = data.get("content", [{}])[0].get("text", "{}")
-        log.debug("anthropic_response_received", tokens=data.get("usage", {}))
         return self._parse_json(text)
 
-    @_RETRY_DECORATOR
     async def _invoke_openai(
         self,
         api_key: str,
@@ -122,10 +207,11 @@ class MultiProviderLLMAdapter(LLMPort):
         temperature: float,
         max_tokens: int,
         response_format: dict[str, Any] | None = None,
+        *,
+        model: str = "gpt-4o",
     ) -> dict[str, Any]:
-        log = logger.bind(provider="openai")
         body: dict[str, Any] = {
-            "model": "gpt-4o",
+            "model": model,
             "temperature": temperature,
             "max_tokens": max_tokens,
             "messages": [
@@ -146,10 +232,8 @@ class MultiProviderLLMAdapter(LLMPort):
         response.raise_for_status()
         data = response.json()
         text = data["choices"][0]["message"]["content"]
-        log.debug("openai_response_received", tokens=data.get("usage", {}))
         return self._parse_json(text)
 
-    @_RETRY_DECORATOR
     async def _invoke_google(
         self,
         api_key: str,
@@ -157,10 +241,11 @@ class MultiProviderLLMAdapter(LLMPort):
         user_prompt: str,
         temperature: float,
         max_tokens: int,
+        *,
+        model: str = "gemini-2.0-flash",
     ) -> dict[str, Any]:
-        log = logger.bind(provider="google")
         response = await self._client.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
             headers={"Content-Type": "application/json"},
             json={
                 "system_instruction": {"parts": [{"text": system_prompt}]},
@@ -180,7 +265,6 @@ class MultiProviderLLMAdapter(LLMPort):
             .get("parts", [{}])[0]
             .get("text", "{}")
         )
-        log.debug("google_response_received")
         return self._parse_json(text)
 
     @staticmethod
@@ -188,7 +272,6 @@ class MultiProviderLLMAdapter(LLMPort):
         try:
             return json.loads(text)  # type: ignore[no-any-return]
         except json.JSONDecodeError:
-            # Try to extract JSON from markdown code blocks
             if "```json" in text:
                 start = text.index("```json") + 7
                 end = text.index("```", start)
@@ -201,3 +284,7 @@ class MultiProviderLLMAdapter(LLMPort):
 
     async def close(self) -> None:
         await self._client.aclose()
+
+
+# ── Backward compatibility alias ─────────────────────────────
+MultiProviderLLMAdapter = ResilientLLMAdapter

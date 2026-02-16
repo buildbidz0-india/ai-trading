@@ -65,6 +65,32 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     google_api_key: str = ""
 
+    # Multiple keys per provider (comma-separated for rotation)
+    anthropic_api_keys: str = ""
+    openai_api_keys: str = ""
+    google_api_keys: str = ""
+
+    # ── Provider Resilience ──────────────────────────────────
+    llm_routing_strategy: str = "priority_failover"
+    llm_provider_priority: str = "google,anthropic,openai"
+
+    # Circuit breaker
+    circuit_breaker_failure_threshold: int = 5
+    circuit_breaker_cooldown_seconds: float = 30.0
+
+    # Per-provider rate limits (requests per minute)
+    anthropic_rpm: int = 50
+    openai_rpm: int = 60
+    google_rpm: int = 60
+    anthropic_tpm: int = 0  # 0 = unlimited
+    openai_tpm: int = 0
+    google_tpm: int = 0
+
+    # Gateway settings
+    provider_timeout_seconds: float = 60.0
+    provider_backoff_base: float = 0.5
+    provider_backoff_max: float = 8.0
+
     # ── Observability ────────────────────────────────────────
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
     otel_service_name: str = "ai-trading-platform"
