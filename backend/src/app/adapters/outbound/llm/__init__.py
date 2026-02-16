@@ -147,7 +147,6 @@ class ResilientLLMAdapter(LLMPort):
         preferred = provider.value if provider else None
 
         async def _call(cfg: ProviderConfig, api_key: str) -> dict[str, Any]:
-            print(f"DEBUG: _call cfg metadata={cfg.metadata}")
             if cfg.provider_id == "anthropic":
                 return await self._invoke_anthropic(
                     api_key, system_prompt, user_prompt, temperature, max_tokens,
@@ -216,9 +215,7 @@ class ResilientLLMAdapter(LLMPort):
         *,
         model: str = "gpt-4o",
         base_url: str = "https://api.openai.com/v1",
-        base_url: str = "https://api.openai.com/v1",
     ) -> dict[str, Any]:
-        print(f"DEBUG: _invoke_openai called with base_url={base_url}")
         body: dict[str, Any] = {
             "model": model,
             "temperature": temperature,
