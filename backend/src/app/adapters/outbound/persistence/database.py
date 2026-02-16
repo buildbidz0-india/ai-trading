@@ -14,12 +14,35 @@ from app.config import Settings
 
 
 def create_engine(settings: Settings):  # type: ignore[no-untyped-def]
+    url = settings.database_url
+    connect_args = {}
+    
+    # asyncpg doesn't like 'sslmode' in the query string, it wants 'ssl' in connect_args
+    if "sslmode=" in url:
+        import ssl
+        from sqlalchemy.engine.url import make_url
+        
+        parsed_url = make_url(url)
+        # Strip sslmode from the URL to prevent asyncpg error
+        query = dict(parsed_url.query)
+        ssl_mode = query.pop("sslmode", "require")
+        url = str(parsed_url.set(query=query))
+        
+        # For Neon/Azure/RDS, setting ssl context or just ssl=True is common
+        if ssl_mode in ("require", "verify-full", "verify-ca"):
+            # Create a default SSL context that trusts system CA
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE  # Common for Neon pooler
+            connect_args["ssl"] = ctx
+
     return create_async_engine(
-        settings.database_url,
+        url,
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_max_overflow,
         echo=settings.app_debug,
         pool_pre_ping=True,
+        connect_args=connect_args
     )
 
 

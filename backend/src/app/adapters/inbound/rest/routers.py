@@ -85,6 +85,10 @@ async def health_check() -> HealthResponse:
         if not await cache.health_check():
             redis_status = "disconnected"
             redis_error = "Ping failed"
+        else:
+            # Check if it's using memory fallback
+            if getattr(cache, "_use_memory", False):
+                redis_status = "connected (memory fallback)"
     except Exception as e:
         redis_status = "disconnected"
         redis_error = str(e)
@@ -102,8 +106,9 @@ async def health_check() -> HealthResponse:
         db_status = "disconnected"
         db_error = str(e)
 
-    # Database is critical for 'ok' status, Redis is optional for MVP
-    overall = "ok" if db_status == "connected" else "degraded"
+    # Database is critical for 'ok' status, Redis fallback is acceptable for development
+    is_ok = db_status == "connected"
+    overall = "ok" if is_ok else "degraded"
 
     resp_data = {
         "status": overall,

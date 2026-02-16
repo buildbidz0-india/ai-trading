@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 from sqlalchemy import text
 from app.config import get_settings
 from app.adapters.outbound.persistence.database import create_session_factory
@@ -11,9 +12,12 @@ async def test_db():
         factory = create_session_factory(settings)
         async with factory() as session:
             await session.execute(text("SELECT 1"))
-        print("✅ Database connected successfully")
+        print("SUCCESS: Database connected successfully")
     except Exception as e:
-        print(f"❌ Database connection failed: {e}")
+        print(f"FAILURE: Database connection failed")
+        print(f"Error type: {type(e).__name__}")
+        print(f"Error message: {str(e)}")
+        # traceback.print_exc()
 
 async def test_redis():
     settings = get_settings()
@@ -21,11 +25,14 @@ async def test_redis():
     try:
         cache = RedisCacheAdapter(settings.redis_url, settings.redis_max_connections)
         if await cache.health_check():
-            print("✅ Redis connected successfully")
+            print("SUCCESS: Redis connected successfully")
         else:
-            print("❌ Redis health check failed (Ping failed)")
+            print("FAILURE: Redis health check failed (Ping failed)")
     except Exception as e:
-        print(f"❌ Redis connection failed: {e}")
+        print(f"FAILURE: Redis connection failed")
+        print(f"Error type: {type(e).__name__}")
+        print(f"Error message: {str(e)}")
+        # traceback.print_exc()
 
 async def main():
     await test_db()
