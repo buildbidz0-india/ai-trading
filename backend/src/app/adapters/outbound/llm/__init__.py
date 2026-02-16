@@ -29,6 +29,7 @@ def build_provider_configs(
     anthropic_api_keys: str = "",
     openai_api_keys: str = "",
     google_api_keys: str = "",
+    openai_base_url: str = "https://api.openai.com/v1",
     anthropic_model: str = "claude-3-5-sonnet-20240620",
     openai_model: str = "gpt-4o",
     google_model: str = "gemini-2.0-flash",
@@ -82,7 +83,7 @@ def build_provider_configs(
             timeout_s=timeout_s,
             cb_failure_threshold=cb_failure_threshold,
             cb_cooldown_s=cb_cooldown_s,
-            metadata={"model": openai_model},
+            metadata={"model": openai_model, "base_url": openai_base_url},
         ),
         ProviderConfig(
             provider_id="google",
@@ -225,7 +226,7 @@ class ResilientLLMAdapter(LLMPort):
         if response_format:
             body["response_format"] = response_format
         response = await self._client.post(
-            "https://api.openai.com/v1/chat/completions",
+            f"{cfg.metadata.get('base_url', 'https://api.openai.com/v1')}/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",

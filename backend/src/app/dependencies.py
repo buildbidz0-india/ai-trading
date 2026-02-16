@@ -143,6 +143,7 @@ def get_llm(settings: Settings | None = None) -> ResilientLLMAdapter:
         provider_configs = build_provider_configs(
             anthropic_api_key=s.anthropic_api_key,
             openai_api_key=s.openai_api_key,
+            openai_base_url=s.openai_base_url,
             google_api_key=s.google_api_key,
             anthropic_api_keys=s.anthropic_api_keys,
             openai_api_keys=s.openai_api_keys,

@@ -10,6 +10,13 @@ from typing import Any
 
 import httpx
 import structlog
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
 
 from app.domain.entities import Order
 from app.ports.outbound import BrokerPort
@@ -17,6 +24,16 @@ from app.ports.outbound import BrokerPort
 logger = structlog.get_logger(__name__)
 
 _BASE_URL = "https://api.kite.trade"
+
+
+# Shared retry policy for broker interactions
+_broker_retry = retry(
+    stop=stop_after_attempt(3),  # Max 3 attempts
+    wait=wait_exponential(multiplier=1, min=1, max=10),  # Exp backoff 1s -> 10s
+    retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException, httpx.HTTPStatusError)),
+    before_sleep=before_sleep_log(logger, "WARNING"),
+    reraise=True,
+)
 
 
 class ZerodhaBrokerAdapter(BrokerPort):
@@ -81,6 +98,7 @@ class ZerodhaBrokerAdapter(BrokerPort):
     }
 
     # ── BrokerPort implementation ─────────────────────────────
+    @_broker_retry
     async def place_order(self, order: Order) -> str:
         params = {
             "tradingsymbol": str(order.symbol),
@@ -106,16 +124,29 @@ class ZerodhaBrokerAdapter(BrokerPort):
         )
         return broker_id
 
+    @_broker_retry
     async def cancel_order(self, broker_order_id: str) -> bool:
-        resp = await self._client.delete(f"/orders/regular/{broker_order_id}")
-        if resp.status_code == 200:
-            logger.info("zerodha_order_cancelled", broker_id=broker_order_id)
-            return True
-        logger.warning(
-            "zerodha_cancel_failed", broker_id=broker_order_id, status=resp.status_code
-        )
-        return False
+        try:
+            resp = await self._client.delete(f"/orders/regular/{broker_order_id}")
+            if resp.status_code == 200:
+                logger.info("zerodha_order_cancelled", broker_id=broker_order_id)
+                return True
+            
+            # Handle 404 cleanly
+            if resp.status_code == 404:
+                return False
+                
+            resp.raise_for_status()
+            logger.warning(
+                "zerodha_cancel_failed", broker_id=broker_order_id, status=resp.status_code
+            )
+            return False
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return False
+            raise e
 
+    @_broker_retry
     async def get_positions(self) -> list[dict[str, Any]]:
         resp = await self._client.get("/portfolio/positions")
         resp.raise_for_status()
@@ -123,11 +154,13 @@ class ZerodhaBrokerAdapter(BrokerPort):
         net = data.get("data", {}).get("net", [])
         return net  # type: ignore[no-any-return]
 
+    @_broker_retry
     async def get_order_status(self, broker_order_id: str) -> dict[str, Any]:
         resp = await self._client.get(f"/orders/{broker_order_id}")
         resp.raise_for_status()
         return resp.json().get("data", {})
 
+    @_broker_retry
     async def get_option_chain(self, symbol: str, expiry: str) -> dict[str, Any]:
         # Kite doesn't have a native option chain endpoint — fetch instruments
         resp = await self._client.get("/instruments/NFO")

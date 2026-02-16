@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     # ── LLM ──────────────────────────────────────────────────
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"  # Default to official API
     google_api_key: str = ""
 
     # Models

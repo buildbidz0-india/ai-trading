@@ -11,6 +11,13 @@ from typing import Any
 
 import httpx
 import structlog
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
 
 from app.domain.entities import Order
 from app.ports.outbound import BrokerPort
@@ -18,6 +25,16 @@ from app.ports.outbound import BrokerPort
 logger = structlog.get_logger(__name__)
 
 _BASE_URL = "https://api.shoonya.com/NorenWClientTP"
+
+
+# Shared retry policy for broker interactions
+_broker_retry = retry(
+    stop=stop_after_attempt(3),  # Max 3 attempts
+    wait=wait_exponential(multiplier=1, min=1, max=10),  # Exp backoff 1s -> 10s
+    retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException, httpx.HTTPStatusError)),
+    before_sleep=before_sleep_log(logger, "WARNING"),
+    reraise=True,
+)
 
 
 class ShoonyaBrokerAdapter(BrokerPort):
@@ -47,6 +64,7 @@ class ShoonyaBrokerAdapter(BrokerPort):
         )
         logger.info("shoonya_adapter_initialized", user_id=user_id)
 
+    @_broker_retry
     async def login(self) -> str:
         """Authenticate with Shoonya API and store session token."""
         pwd_hash = hashlib.sha256(self._password.encode()).hexdigest()
@@ -95,6 +113,7 @@ class ShoonyaBrokerAdapter(BrokerPort):
     }
 
     # ── BrokerPort implementation ─────────────────────────────
+    @_broker_retry
     async def place_order(self, order: Order) -> str:
         payload = {
             **self._auth_payload(),
@@ -121,9 +140,17 @@ class ShoonyaBrokerAdapter(BrokerPort):
         )
         return broker_id
 
+    @_broker_retry
     async def cancel_order(self, broker_order_id: str) -> bool:
         payload = {**self._auth_payload(), "norenordno": broker_order_id}
-        resp = await self._client.post("/CancelOrder", json=payload)
+        # Shoonya returns 200 OK even for logical failures, check "stat" field
+        try:
+            resp = await self._client.post("/CancelOrder", json=payload)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError:
+             # Retry on actual HTTP errors
+             raise 
+             
         data = resp.json()
         if data.get("stat") == "Ok":
             logger.info("shoonya_order_cancelled", broker_id=broker_order_id)
@@ -131,6 +158,7 @@ class ShoonyaBrokerAdapter(BrokerPort):
         logger.warning("shoonya_cancel_failed", broker_id=broker_order_id, resp=data)
         return False
 
+    @_broker_retry
     async def get_positions(self) -> list[dict[str, Any]]:
         payload = {**self._auth_payload(), "actid": self._user_id}
         resp = await self._client.post("/PositionBook", json=payload)
@@ -140,12 +168,14 @@ class ShoonyaBrokerAdapter(BrokerPort):
             return data
         return []
 
+    @_broker_retry
     async def get_order_status(self, broker_order_id: str) -> dict[str, Any]:
         payload = {**self._auth_payload(), "norenordno": broker_order_id}
         resp = await self._client.post("/SingleOrderHistory", json=payload)
         resp.raise_for_status()
         return resp.json()
 
+    @_broker_retry
     async def get_option_chain(self, symbol: str, expiry: str) -> dict[str, Any]:
         payload = {
             **self._auth_payload(),
