@@ -1,6 +1,6 @@
 "use client"
 import * as React from "react"
-import { createChart, ColorType, IChartApi, CandlestickSeries } from "lightweight-charts"
+import { createChart, ColorType, IChartApi } from "lightweight-charts"
 import { AcrylicCard } from "@/components/ui/AcrylicCard"
 
 export function ChartComponent() {
@@ -29,7 +29,7 @@ export function ChartComponent() {
             }
         })
 
-        const candlestickSeries = chart.addSeries(CandlestickSeries, {
+        const candlestickSeries = chart.addCandlestickSeries({
             upColor: '#22c55e', // green-500
             downColor: '#ef4444', // red-500
             borderVisible: false,
