@@ -83,6 +83,7 @@
   }
 }
 
+/*
 @layer utilities {
   .acrylic-material {
     @apply bg-background/60 backdrop-blur-xl border border-white/10 shadow-xl;
@@ -100,3 +101,4 @@
     @apply bg-black/5 dark:bg-white/5 border-transparent focus:border-primary/50 focus:bg-background transition-all duration-200 rounded-md;
   }
 }
+*/
