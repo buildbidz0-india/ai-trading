@@ -4,7 +4,7 @@ import { getToken } from './auth';
 const getApiBaseUrl = () => {
     // In production, we can often use relative paths if on the same domain
     if (typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_API_URL) {
-        return '/api/v1';
+        return '/api/v1/';
     }
 
     const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -15,7 +15,9 @@ const getApiBaseUrl = () => {
     const versionedUrl = cleanUrl.includes('/api/v1') ? cleanUrl : `${cleanUrl}/api/v1`;
 
     // Ensure it ends with a slash for predictable merging
-    return `${versionedUrl}/`;
+    const finalUrl = `${versionedUrl}/`;
+    console.log('API Base URL:', finalUrl);
+    return finalUrl;
 };
 
 const API_BASE_URL = getApiBaseUrl();

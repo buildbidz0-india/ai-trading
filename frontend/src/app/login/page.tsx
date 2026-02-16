@@ -39,11 +39,12 @@ export default function LoginPage() {
             setRefreshToken(refresh_token);
             router.push("/");
         } catch (err: any) {
-            console.error(err);
+            console.error('Login error:', err);
+            const baseURL = api.defaults.baseURL || 'unknown';
             if (err.code === 'ERR_NETWORK') {
-                setError("Cannot connect to server. Please check if the backend is running.");
+                setError(`Connection failed. Are you sure your backend is at ${baseURL}? Click it to check!`);
             } else {
-                setError(err.response?.data?.detail || "Invalid credentials");
+                setError(err.response?.data?.detail || "Invalid credentials. If this persists, check if DATABASE_URL is correct in your backend.");
             }
         } finally {
             setLoading(false);
