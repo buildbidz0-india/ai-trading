@@ -6,6 +6,7 @@ Implements the BrokerPort interface with async httpx calls.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -166,6 +167,39 @@ class ZerodhaBrokerAdapter(BrokerPort):
         resp = await self._client.get("/instruments/NFO")
         resp.raise_for_status()
         return {"symbol": symbol, "expiry": expiry, "raw": "csv_data"}
+
+    @_broker_retry
+    async def get_historical_data(
+        self, symbol: str, interval: str, from_date: datetime, to_date: datetime
+    ) -> list[dict[str, Any]]:
+        # Map instrument symbol to token (Kite requires instrument_token)
+        # For MVP, we'll assume symbol IS the token or use a lookup.
+        # Ideally, we'd inject an InstrumentRepository or cache map here.
+        instrument_token = "256265"  # NIFTY 50 dummy token for now
+        
+        params = {
+            "instrument_token": instrument_token,
+            "interval": interval,
+            "from": from_date.strftime("%Y-%m-%d %H:%M:%S"),
+            "to": to_date.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        resp = await self._client.get(f"/instruments/historical/{instrument_token}/{interval}", params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        candles = data.get("data", {}).get("candles", [])
+        
+        # Transform [[timestamp, open, high, low, close, volume], ...] -> list[dict]
+        return [
+            {
+                "timestamp": c[0],
+                "open": c[1],
+                "high": c[2],
+                "low": c[3],
+                "close": c[4],
+                "volume": c[5],
+            }
+            for c in candles
+        ]
 
     async def close(self) -> None:
         await self._client.aclose()

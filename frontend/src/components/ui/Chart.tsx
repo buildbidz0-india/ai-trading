@@ -1,13 +1,28 @@
 "use client"
 import * as React from "react"
-import { createChart, ColorType, IChartApi } from "lightweight-charts"
+import { createChart, ColorType, IChartApi, ISeriesApi } from "lightweight-charts"
 import { AcrylicCard } from "@/components/ui/AcrylicCard"
 import { useStore } from "@/lib/store"
+import { useHistoricalData, Resolution } from "@/hooks/useHistoricalData"
+import { cn } from "@/lib/utils"
+
+const TIMEFRAMES: { label: string; value: Resolution }[] = [
+    { label: '1M', value: '1m' },
+    { label: '5M', value: '5m' },
+    { label: '15M', value: '15m' },
+    { label: '1H', value: '1h' },
+    { label: '1D', value: '1d' },
+]
 
 export function ChartComponent() {
     const chartContainerRef = React.useRef<HTMLDivElement>(null)
     const chartRef = React.useRef<IChartApi | null>(null)
+    const seriesRef = React.useRef<ISeriesApi<"Candlestick"> | null>(null)
 
+    const { selectedTicker } = useStore()
+    const { data, loading, error, resolution, setResolution } = useHistoricalData(selectedTicker || "NIFTY")
+
+    // Initialize Chart
     React.useEffect(() => {
         if (!chartContainerRef.current) return
 
@@ -24,6 +39,8 @@ export function ChartComponent() {
             height: 400,
             timeScale: {
                 borderColor: 'rgba(255, 255, 255, 0.1)',
+                timeVisible: true,
+                secondsVisible: false,
             },
             rightPriceScale: {
                 borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -38,20 +55,7 @@ export function ChartComponent() {
             wickDownColor: '#ef4444',
         })
 
-        // Mock Data
-        const data = [
-            { time: '2023-12-19', open: 21400, high: 21500, low: 21350, close: 21450 },
-            { time: '2023-12-20', open: 21450, high: 21600, low: 21400, close: 21550 },
-            { time: '2023-12-21', open: 21550, high: 21650, low: 21500, close: 21100 },
-            { time: '2023-12-22', open: 21100, high: 21300, low: 21050, close: 21250 },
-            { time: '2023-12-23', open: 21250, high: 21400, low: 21200, close: 21340 },
-            { time: '2023-12-24', open: 21340, high: 21450, low: 21300, close: 21400 },
-            { time: '2023-12-25', open: 21400, high: 21500, low: 21380, close: 21420 },
-        ]
-
-        candlestickSeries.setData(data)
-        chart.timeScale().fitContent()
-
+        seriesRef.current = candlestickSeries
         chartRef.current = chart
 
         const handleResize = () => {
@@ -68,17 +72,59 @@ export function ChartComponent() {
         }
     }, [])
 
-    const { selectedTicker } = useStore()
-
-    // ... (rest of useEffect)
+    // Update Data
+    React.useEffect(() => {
+        if (seriesRef.current && data.length > 0) {
+            seriesRef.current.setData(data)
+            chartRef.current?.timeScale().fitContent()
+        }
+    }, [data])
 
     return (
-        <AcrylicCard variant="default" className="p-1 h-[450px]">
-            <div className="p-3 border-b border-white/5 flex justify-between items-center">
-                <div className="text-sm font-medium">{selectedTicker} Index</div>
-                <div className="text-xs text-muted-foreground">15m</div>
+        <AcrylicCard variant="default" className="p-1 h-[450px] relative flex flex-col">
+            {/* Header / Controls */}
+            <div className="p-3 border-b border-white/5 flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-4">
+                    <div className="text-sm font-medium">{selectedTicker || "NIFTY"}</div>
+
+                    {/* Timeframe Selector */}
+                    <div className="flex bg-muted/20 rounded-lg p-0.5">
+                        {TIMEFRAMES.map((tf) => (
+                            <button
+                                key={tf.value}
+                                onClick={() => setResolution(tf.value)}
+                                className={cn(
+                                    "px-2 py-0.5 text-[10px] font-medium rounded transition-all",
+                                    resolution === tf.value
+                                        ? "bg-primary/20 text-primary shadow-sm"
+                                        : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                                )}
+                            >
+                                {tf.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    {loading && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground animate-pulse">
+                            <div className="size-1.5 bg-primary rounded-full" />
+                            Loading...
+                        </div>
+                    )}
+                    {error && (
+                        <div className="text-xs text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
+                            Failed to load
+                        </div>
+                    )}
+                </div>
             </div>
-            <div ref={chartContainerRef} className="w-full h-[400px]" />
+
+            {/* Chart Container */}
+            <div className="flex-1 relative w-full min-h-0">
+                <div ref={chartContainerRef} className="absolute inset-0" />
+            </div>
         </AcrylicCard>
     )
 }

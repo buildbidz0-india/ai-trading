@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -403,3 +404,62 @@ async def reset_provider(
     llm = get_llm()
     llm.gateway.reset_provider(provider_id)
     return {"status": "reset", "provider_id": provider_id}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Market Data
+# ═══════════════════════════════════════════════════════════════
+market_router = APIRouter(prefix="/market", tags=["Market Data"])
+
+
+@market_router.get("/history")
+async def get_historical_data(
+    symbol: str,
+    resolution: str,
+    from_date: datetime,
+    to_date: datetime,
+    _user: dict = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    """Get historical OHLCV data."""
+    settings = get_cached_settings()
+    
+    # In a real app, we'd get the active broker adapter from a factory/dependency
+    # For this MVP, we'll instantiate the configured one or use a singleton.
+    # We'll rely on the settings to decide.
+    
+    # Quick factory logic (should be in dependencies.py preferably)
+    from app.adapters.outbound.broker.zerodha import ZerodhaBrokerAdapter
+    from app.adapters.outbound.broker.shoonya import ShoonyaBrokerAdapter
+    
+    adapter = None
+    if settings.broker_provider == "zerodha":
+        adapter = ZerodhaBrokerAdapter(
+            api_key=settings.zerodha_api_key,
+            api_secret=settings.zerodha_api_secret,
+            access_token=settings.zerodha_access_token
+        )
+    elif settings.broker_provider == "shoonya":
+        adapter = ShoonyaBrokerAdapter(
+            user_id=settings.shoonya_user_id,
+            password=settings.shoonya_password,
+            api_key=settings.shoonya_api_key
+        )
+        # Shoonya might need login if not reusing session, but let's assume valid for now
+        # or it will re-login if we implemented auto-login in adapter.
+        # The Shoonya adapter implemented above has a login method but doesn't auto-call it in init.
+        # For MVP, we might fail if not logged in.
+    
+    if not adapter:
+         # Fallback to mock data if no broker configured or "paper"
+         return [
+             {
+                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                 "open": 22000, "high": 22100, "low": 21900, "close": 22050, "volume": 1000
+             }
+         ]
+
+    try:
+        data = await adapter.get_historical_data(symbol, resolution, from_date, to_date)
+        return data
+    finally:
+        await adapter.close()

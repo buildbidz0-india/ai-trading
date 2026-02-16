@@ -164,6 +164,13 @@ class BrokerPort(ABC):
     @abstractmethod
     async def get_option_chain(self, symbol: str, expiry: str) -> dict[str, Any]: ...
 
+    @abstractmethod
+    async def get_historical_data(
+        self, symbol: str, interval: str, from_date: datetime, to_date: datetime
+    ) -> list[dict[str, Any]]:
+        """Get historical OHLCV data."""
+        ...
+
 
 # ═══════════════════════════════════════════════════════════════
 #  Market data port

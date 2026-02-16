@@ -7,6 +7,7 @@ Implements the BrokerPort interface with async httpx calls.
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -186,6 +187,38 @@ class ShoonyaBrokerAdapter(BrokerPort):
         resp = await self._client.post("/GetOptionChain", json=payload)
         resp.raise_for_status()
         return resp.json()
+
+    @_broker_retry
+    async def get_historical_data(
+        self, symbol: str, interval: str, from_date: datetime, to_date: datetime
+    ) -> list[dict[str, Any]]:
+        payload = {
+            **self._auth_payload(),
+            "exch": "NSE",  # Default to NSE for now
+            "token": symbol, # Shoonya uses token, needs lookup
+            "st": from_date.strftime("%s"), # Unix timestamp
+            "et": to_date.strftime("%s"),
+            "intrv": interval, # 1, 3, 5, 10, 15, 30, 60, etc.
+        }
+        resp = await self._client.post("/TPSeries", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        # Shoonya returns list of dicts naturally, but keys might differ
+        # { "time": "...", "into": "...", "inth": "...", "intl": "...", "intc": "...", "intv": "..." }
+        if isinstance(data, list):
+            return [
+                {
+                    "timestamp": c.get("time"),
+                    "open": float(c.get("into", 0)),
+                    "high": float(c.get("inth", 0)),
+                    "low": float(c.get("intl", 0)),
+                    "close": float(c.get("intc", 0)),
+                    "volume": int(c.get("intv", 0)),
+                }
+                for c in data
+            ]
+        return []
 
     async def close(self) -> None:
         await self._client.aclose()
