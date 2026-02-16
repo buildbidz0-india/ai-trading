@@ -51,7 +51,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             method=request.method,
             path=request.url.path,
             status=response.status_code,
-            duration_ms=round(duration * 1000, 2),
+            duration_ms=round(float(duration * 1000), 2),
             client=request.client.host if request.client else "unknown",
         )
         return response

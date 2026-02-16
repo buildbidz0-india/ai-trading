@@ -29,7 +29,8 @@ class PaperBrokerAdapter(BrokerPort):
         self._positions: list[dict[str, Any]] = []
 
     async def place_order(self, order: Order) -> str:
-        broker_id = f"PAPER-{uuid.uuid4().hex[:8].upper()}"
+        hex_val: str = uuid.uuid4().hex
+        broker_id = f"PAPER-{hex_val[:8].upper()}"
         self._orders[broker_id] = {
             "broker_order_id": broker_id,
             "symbol": str(order.symbol),
