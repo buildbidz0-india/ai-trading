@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import pytest
+import sys
+import os
 from decimal import Decimal
+
+# Add src to path so imports work
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from app.domain.entities import Instrument, Order, Position
 from app.domain.enums import (
