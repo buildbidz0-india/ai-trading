@@ -1,6 +1,11 @@
 import { getToken } from './auth';
 
-const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://127.0.0.1:8000';
+const getWsBaseUrl = () => {
+    const rawUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
+    return rawUrl.replace(/\/$/, '');
+};
+
+const WS_BASE_URL = getWsBaseUrl();
 
 type TickData = {
     symbol: string;

@@ -1,7 +1,15 @@
 import axios from 'axios';
 import { getToken } from './auth';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api/v1';
+const getApiBaseUrl = () => {
+    const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    // Remove trailing slash if present
+    const cleanUrl = rawUrl.replace(/\/$/, '');
+    // Append /api/v1 if not already present
+    return cleanUrl.includes('/api/v1') ? cleanUrl : `${cleanUrl}/api/v1`;
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export const api = axios.create({
     baseURL: API_BASE_URL,
