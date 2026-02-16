@@ -458,8 +458,9 @@ async def get_historical_data(
              }
          ]
 
+    data: list[dict[str, Any]] = []
     try:
         data = await adapter.get_historical_data(symbol, resolution, from_date, to_date)
-        return data
     finally:
         await adapter.close()
+    return data
