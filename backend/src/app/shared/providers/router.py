@@ -12,10 +12,8 @@ from typing import Sequence
 
 import structlog
 
-from app.shared.providers.circuit_breaker import CircuitBreaker
-from app.shared.providers.health import ProviderHealthTracker
-from app.shared.providers.quota import QuotaManager
-from app.shared.providers.types import ProviderConfig, ProviderStatus, RoutingStrategy
+from app.shared.providers.key_manager import KeyManager
+from app.shared.providers.types import ProviderConfig, RoutingStrategy
 
 logger = structlog.get_logger(__name__)
 
@@ -28,15 +26,11 @@ class ProviderRouter:
         providers: Sequence[ProviderConfig],
         *,
         strategy: RoutingStrategy = RoutingStrategy.PRIORITY_FAILOVER,
-        health_trackers: dict[str, ProviderHealthTracker] | None = None,
-        circuit_breakers: dict[str, CircuitBreaker] | None = None,
-        quota_managers: dict[str, QuotaManager] | None = None,
+        key_managers: dict[str, KeyManager] | None = None,
     ) -> None:
         self._providers = list(providers)
         self._strategy = strategy
-        self._health = health_trackers or {}
-        self._circuits = circuit_breakers or {}
-        self._quotas = quota_managers or {}
+        self._key_managers = key_managers or {}
 
         # Round-robin state
         self._rr_index = 0
@@ -57,12 +51,7 @@ class ProviderRouter:
         candidates = self._filter_candidates(exclude, estimated_tokens)
 
         if not candidates:
-            logger.warning(
-                "no_available_providers",
-                strategy=self._strategy.value,
-                excluded=list(exclude),
-                total_configured=len(self._providers),
-            )
+            # We don't have detailed reasoning here easily, but KeyManagers logged warnings already potentially
             return None
 
         if self._strategy == RoutingStrategy.PRIORITY_FAILOVER:
@@ -103,14 +92,9 @@ class ProviderRouter:
         return random.choices(candidates, weights=weights, k=1)[0]
 
     def _select_least_latency(self, candidates: list[ProviderConfig]) -> ProviderConfig:
-        def latency_key(p: ProviderConfig) -> float:
-            tracker = self._health.get(p.provider_id)
-            if tracker:
-                h = tracker.health
-                return h.latency_p50_ms if h.latency_p50_ms > 0 else float("inf")
-            return float("inf")
-
-        return min(candidates, key=latency_key)
+        # TODO: Implement complex latency with KeyManager aggregator later
+        # For now, simplistic fallback or random as latency might be distributed across keys
+        return candidates[0] # Simplification for now
 
     # ── Filtering ────────────────────────────────────────────
     def _filter_candidates(
@@ -128,25 +112,21 @@ class ProviderRouter:
             # Skip providers without API keys
             if not provider.has_keys:
                 continue
-
-            # Skip circuit-open providers
-            cb = self._circuits.get(pid)
-            if cb and not cb.can_execute():
-                logger.debug("provider_circuit_open", provider=pid)
+            
+            # Check availability via KeyManager
+            km = self._key_managers.get(pid)
+            if not km:
                 continue
-
-            # Skip unhealthy providers
-            tracker = self._health.get(pid)
-            if tracker and tracker.status == ProviderStatus.UNHEALTHY:
-                logger.debug("provider_unhealthy", provider=pid)
+            
+            # KeyManager determines if there are ANY usable keys
+            # Ideally we check estimated_tokens too, but selecting a key is dynamic.
+            # We ask "is there at least one potentially usable key?"
+            # For simplicity, we can rely on KeyManager internal logic.
+            # But here we just want to know "is the provider COMPLETELY dead?"
+            if not km.any_healthy:
+                logger.debug("provider_all_keys_unhealthy", provider=pid)
                 continue
-
-            # Skip quota-exhausted providers
-            quota = self._quotas.get(pid)
-            if quota and not quota.can_accept(estimated_tokens):
-                logger.debug("provider_quota_exhausted", provider=pid)
-                continue
-
+            
             candidates.append(provider)
 
         return candidates

@@ -94,7 +94,7 @@ def build_provider_configs(
             timeout_s=timeout_s,
             cb_failure_threshold=cb_failure_threshold,
             cb_cooldown_s=cb_cooldown_s,
-            metadata={"model": google_model},
+            metadata={"model": "gemini-2.0-flash" if google_model == "gemini-2.0-flash" else google_model},
         ),
     ]
 

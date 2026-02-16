@@ -63,6 +63,10 @@ _event_bus: InProcessEventBus | None = None
 _broker: PaperBrokerAdapter | DhanBrokerAdapter | ZerodhaBrokerAdapter | ShoonyaBrokerAdapter | None = None
 _llm: ResilientLLMAdapter | None = None
 
+import asyncio
+
+_init_lock = asyncio.Lock()
+
 
 def get_session_factory(settings: Settings | None = None) -> async_sessionmaker[AsyncSession]:
     global _session_factory
@@ -87,10 +91,17 @@ def get_event_bus() -> InProcessEventBus:
     return _event_bus
 
 
-def get_broker(settings: Settings | None = None):  # type: ignore[no-untyped-def]
-    """Factory that selects broker adapter based on BROKER_PROVIDER config."""
+async def get_broker(settings: Settings | None = None):  # type: ignore[no-untyped-def]
+    """Factory that selects broker adapter based on BROKER_PROVIDER config.
+
+    Uses asyncio.Lock to prevent double-initialization under concurrent access.
+    """
     global _broker
-    if _broker is None:
+    if _broker is not None:
+        return _broker
+    async with _init_lock:
+        if _broker is not None:
+            return _broker  # another coroutine won the race
         s = settings or get_cached_settings()
         provider = s.broker_provider.lower()
         if provider == "dhan":

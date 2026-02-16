@@ -1,23 +1,20 @@
 """Resilient provider gateway — the main entry-point for provider calls.
 
-Composes ProviderRouter, CircuitBreaker, QuotaManager, and HealthTracker
-into a single, autonomous resilience layer.  Callers simply hand in a
-request function and the gateway handles rotation, failover, retries,
-backoff, key rotation, and health recording — all without manual intervention.
+Composes ProviderRouter, KeyManager, and HealthTracker into a single, autonomous
+resilience layer.  Callers simply hand in a request function and the gateway
+handles rotation, failover, retries, backoff, key rotation, and health recording
+— all without manual intervention.
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
-import threading
 from typing import Any, Awaitable, Callable, TypeVar, cast
 
 import structlog
 
-from app.shared.providers.circuit_breaker import CircuitBreaker
-from app.shared.providers.health import ProviderHealthTracker
-from app.shared.providers.quota import QuotaManager
+from app.shared.providers.key_manager import KeyManager
 from app.shared.providers.router import ProviderRouter
 from app.shared.providers.types import ProviderConfig, ProviderHealth, RoutingStrategy
 
@@ -66,34 +63,17 @@ class ResilientProviderGateway:
         self._backoff_max = backoff_max
 
         # Per-provider components
-        self._health_trackers: dict[str, ProviderHealthTracker] = {}
-        self._circuit_breakers: dict[str, CircuitBreaker] = {}
-        self._quota_managers: dict[str, QuotaManager] = {}
-        self._key_indices: dict[str, int] = {}
-        self._key_lock = threading.Lock()
+        self._key_managers: dict[str, KeyManager] = {}
 
         for cfg in providers:
             pid = cfg.provider_id
-            self._health_trackers[pid] = ProviderHealthTracker(pid)
-            self._circuit_breakers[pid] = CircuitBreaker(
-                pid,
-                failure_threshold=cfg.cb_failure_threshold,
-                cooldown_seconds=cfg.cb_cooldown_s,
-            )
-            self._quota_managers[pid] = QuotaManager(
-                pid,
-                rpm_limit=cfg.rpm_limit,
-                tpm_limit=cfg.tpm_limit,
-            )
-            self._key_indices[pid] = 0
+            self._key_managers[pid] = KeyManager(cfg)
 
         # Router
         self._router = ProviderRouter(
             providers,
             strategy=strategy,
-            health_trackers=self._health_trackers,
-            circuit_breakers=self._circuit_breakers,
-            quota_managers=self._quota_managers,
+            key_managers=self._key_managers,
         )
 
     # ── Main entry-point ─────────────────────────────────────
@@ -157,58 +137,59 @@ class ResilientProviderGateway:
         errors: dict[str, str],
     ) -> T | object:
         pid = cfg.provider_id
-        tracker = self._health_trackers[pid]
-        cb = self._circuit_breakers[pid]
-        quota = self._quota_managers[pid]
+        km = self._key_managers[pid]
 
-        max_attempts = min(cfg.max_retries + 1, max(len(cfg.api_keys), 1))
+        # Use provider-defined max retries or fallback to default
+        max_attempts = min(cfg.max_retries + 1, max(km.key_count, 1))
 
+        # Loop through attempts, rotating keys each time
         for attempt in range(max_attempts):
-            # Gate checks
-            if not cb.can_execute():
-                errors[pid] = "circuit_open"
+            # Select a usable key
+            key_state = km.select_key(estimated_tokens)
+
+            if not key_state:
+                # No usable keys (all circuit open or quota exhausted)
+                # If it's the first attempt, we fail immediately
+                # If we've tried some keys and failed, we also stop here
+                errors[pid] = "no_usable_keys"
+                # Log detailed reasons why keys are unusable
+                logger.warning(
+                    "provider_keys_exhausted",
+                    provider=pid,
+                    reasons=km.get_exhausted_errors()
+                )
                 return _SENTINEL
 
-            if not quota.can_accept(estimated_tokens):
-                errors[pid] = "quota_exhausted"
-                return _SENTINEL
-
-            api_key = self._next_key(cfg)
-            log = logger.bind(provider=pid, attempt=attempt + 1, key_idx=self._key_indices.get(pid, 0))
+            log = logger.bind(provider=pid, attempt=attempt + 1, key_idx=key_state.index)
 
             start = time.monotonic()
             try:
                 result = await asyncio.wait_for(
-                    request_fn(cfg, api_key),
+                    request_fn(cfg, key_state.api_key),
                     timeout=cfg.timeout_s,
                 )
                 latency_ms = (time.monotonic() - start) * 1000
 
-                # Record success across all components
-                tracker.record_success(latency_ms)
-                cb.record_success()
-                quota.record_usage(estimated_tokens)
-
+                # Record success
+                km.record_success(key_state.index, latency_ms, estimated_tokens)
+                
                 log.info("provider_request_success", latency_ms=float(f"{latency_ms:.1f}"))
                 return result
 
             except asyncio.TimeoutError:
                 latency_ms = (time.monotonic() - start) * 1000
                 error_msg = f"Timeout after {cfg.timeout_s}s"
-                tracker.record_failure(error_msg, latency_ms)
-                cb.record_failure()
-                errors[pid] = error_msg
-                log.warning("provider_timeout", timeout_s=cfg.timeout_s)
+                km.record_failure(key_state.index, error_msg, latency_ms)
+                # Specific error for this attempt, but we might retry with another key
+                log.warning("provider_timeout", timeout_s=cfg.timeout_s, key_idx=key_state.index)
 
             except Exception as exc:
                 latency_ms = (time.monotonic() - start) * 1000
                 error_msg = f"{type(exc).__name__}: {exc}"
-                tracker.record_failure(error_msg, latency_ms)
-                cb.record_failure()
-                errors[pid] = error_msg
-                log.warning("provider_request_failed", error=error_msg, latency_ms=float(f"{latency_ms:.1f}"))
+                km.record_failure(key_state.index, error_msg, latency_ms)
+                log.warning("provider_request_failed", error=error_msg, latency_ms=float(f"{latency_ms:.1f}"), key_idx=key_state.index)
 
-            # Backoff before next attempt (within same provider)
+            # Backoff before next attempt (if we still have retries left)
             if attempt < max_attempts - 1:
                 delay = min(
                     self._backoff_base * (2 ** attempt),
@@ -216,17 +197,8 @@ class ResilientProviderGateway:
                 )
                 await asyncio.sleep(delay)
 
+        errors[pid] = "exhausted_attempts"
         return _SENTINEL
-
-    # ── Key rotation ─────────────────────────────────────────
-    def _next_key(self, cfg: ProviderConfig) -> str:
-        if not cfg.api_keys:
-            return ""
-        with self._key_lock:
-            idx = self._key_indices.get(cfg.provider_id, 0)
-            key = cfg.api_keys[idx % len(cfg.api_keys)]
-            self._key_indices[cfg.provider_id] = (idx + 1) % len(cfg.api_keys)
-            return key
 
     # ── Chain building ───────────────────────────────────────
     def _build_chain(
@@ -248,36 +220,67 @@ class ResilientProviderGateway:
 
     # ── Health observation ───────────────────────────────────
     def get_health(self, provider_id: str) -> ProviderHealth | None:
-        tracker = self._health_trackers.get(provider_id)
-        if not tracker:
+        km = self._key_managers.get(provider_id)
+        if not km:
             return None
-        health = tracker.health
-        # Enrich with circuit + quota state
-        cb = self._circuit_breakers.get(provider_id)
-        if cb:
-            health.circuit_state = cb.state.value
-        quota = self._quota_managers.get(provider_id)
-        if quota:
-            health.quota_remaining_pct = quota.remaining_pct
-        key_idx = self._key_indices.get(provider_id, 0)
-        health.current_key_index = key_idx
-        return health
+        
+        # Aggregate health? Or return first key health?
+        # Ideally, we return provider-level aggregate health.
+        # For backward compatibility, we can aggregate.
+        
+        # Simple aggregation: sum requests, successes, failures.
+        # Latency: complex without raw data. Avg of avgs?
+        # Status: UNHEALTHY if ALL keys unhealthy, else HEALTHY/DEGRADED.
+        
+        # TODO: Implement proper aggregation in KeyManager then expose here.
+        # For now, simplistic placeholder based on internal key lists.
+        # This is strictly for monitoring/observability compatibility.
+        
+        total_req = 0
+        total_succ = 0
+        total_fail = 0
+        
+        usable_keys = 0
+        
+        for ks in km._keys:
+            h = ks.health_tracker.health
+            total_req += h.total_requests
+            total_succ += h.total_successes
+            total_fail += h.total_failures
+            if ks.circuit_breaker.can_execute():
+                usable_keys += 1
+                
+        status = "healthy"
+        if usable_keys == 0 and km.key_count > 0:
+            status = "unhealthy"
+        elif usable_keys < km.key_count:
+            status = "degraded"
+            
+        success_rate = (total_succ / total_req) if total_req > 0 else 1.0
+        
+        return ProviderHealth(
+            provider_id=provider_id,
+            status=status,
+            total_requests=total_req,
+            total_successes=total_succ,
+            total_failures=total_fail,
+            success_rate=float(f"{success_rate:.4f}"),
+            # P50/95/99 hard to aggregate without raw samples, zeroing for now or needs improvement
+            latency_p50_ms=0.0,
+            latency_p95_ms=0.0,
+            latency_p99_ms=0.0,
+            last_error="Check individual key logs",
+            quota_remaining_pct=100.0, # Approximate
+            current_key_index=km._rr_index,
+        )
 
     def get_all_health(self) -> list[ProviderHealth]:
         results: list[ProviderHealth] = []
-        for pid in self._health_trackers:
+        for pid in self._key_managers:
             h = self.get_health(pid)
             if h is not None:
                 results.append(h)
         return results
-
-    def reset_provider(self, provider_id: str) -> None:
-        """Admin reset — clears circuit breaker and quota for a provider."""
-        if cb := self._circuit_breakers.get(provider_id):
-            cb.reset()
-        if quota := self._quota_managers.get(provider_id):
-            quota.reset()
-        logger.info("provider_admin_reset", provider=provider_id)
 
 
 # Sentinel for "no result"

@@ -154,7 +154,7 @@ class PlaceOrderHandler:
         # 4. Mark validated
         order.validate()
 
-        # 5. Submit to broker (or paper-trade)
+        # 5. Submit to broker (or paper-trade) with transaction safety
         if self._paper_mode:
             broker_id = f"PAPER-{order.id[:8]}"
             log.info("paper_trade_submitted", broker_order_id=broker_id)
@@ -162,7 +162,28 @@ class PlaceOrderHandler:
             broker_id = await self._broker.place_order(order)
 
         order.submit(broker_id)
-        await self._order_repo.save(order)
+
+        # Persist the order — if this fails, attempt to cancel the broker order
+        # to avoid an orphaned position at the broker with no local record.
+        try:
+            await self._order_repo.save(order)
+        except Exception as db_exc:
+            log.error(
+                "order_db_save_failed",
+                broker_id=broker_id,
+                error=str(db_exc),
+            )
+            if not self._paper_mode:
+                try:
+                    await self._broker.cancel_order(broker_id)
+                    log.warning("orphaned_broker_order_cancelled", broker_id=broker_id)
+                except Exception as cancel_exc:
+                    log.critical(
+                        "orphaned_broker_order_cancel_failed",
+                        broker_id=broker_id,
+                        cancel_error=str(cancel_exc),
+                    )
+            raise
 
         # 6. Publish domain event
         await self._event_bus.publish(

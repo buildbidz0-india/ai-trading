@@ -60,16 +60,47 @@ health_router = APIRouter(tags=["Health"])
 @health_router.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     settings = get_cached_settings()
-    return HealthResponse(
-        status="ok",
+    from starlette.responses import JSONResponse
+
+    # ── Check Redis ──────────────────────────────────────────
+    redis_status = "disconnected"
+    try:
+        from app.dependencies import get_cache
+
+        cache = get_cache()
+        if await cache.health_check():
+            redis_status = "connected"
+    except Exception:
+        pass
+
+    # ── Check Database ───────────────────────────────────────
+    db_status = "disconnected"
+    try:
+        from app.dependencies import get_session_factory
+        from sqlalchemy import text
+
+        factory = get_session_factory()
+        async with factory() as session:
+            await session.execute(text("SELECT 1"))
+            db_status = "connected"
+    except Exception:
+        pass
+
+    overall = "ok" if db_status == "connected" and redis_status == "connected" else "degraded"
+
+    resp = HealthResponse(
+        status=overall,
         version="0.1.0",
         environment=settings.app_env.value,
         services={
-            "database": "connected",
-            "redis": "connected",
+            "database": db_status,
+            "redis": redis_status,
             "broker": f"{settings.broker_provider} (paper_mode={settings.paper_trading_mode})",
         },
     )
+    if overall != "ok":
+        return JSONResponse(content=resp.model_dump(), status_code=503)
+    return resp
 
 
 @health_router.get("/metrics")
