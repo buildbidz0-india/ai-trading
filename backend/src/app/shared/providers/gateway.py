@@ -218,6 +218,15 @@ class ResilientProviderGateway:
 
         return chain
 
+    # ── Admin / Resilience ───────────────────────────────────
+    def reset_provider(self, provider_id: str) -> None:
+        """Manually reset a provider's circuit breaker and quotas."""
+        km = self._key_managers.get(provider_id)
+        if hasattr(km, "_keys"):
+            for ks in km._keys:
+                ks.circuit_breaker.reset()
+                ks.quota_manager.reset()
+
     # ── Health observation ───────────────────────────────────
     def get_health(self, provider_id: str) -> ProviderHealth | None:
         km = self._key_managers.get(provider_id)

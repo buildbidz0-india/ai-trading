@@ -27,7 +27,10 @@ from app.adapters.outbound.persistence.repositories import (
     SQLAlchemyInstrumentRepository,
     SQLAlchemyOrderRepository,
     SQLAlchemyPositionRepository,
+    SQLAlchemyOrderRepository,
+    SQLAlchemyPositionRepository,
     SQLAlchemyTradeRepository,
+    SQLAlchemyUserRepository,
 )
 from app.application.commands import (
     CancelOrderHandler,
@@ -185,6 +188,12 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+async def get_user_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> SQLAlchemyUserRepository:
+    return SQLAlchemyUserRepository(session)
+
+
 # ── Auth dependency ──────────────────────────────────────────
 async def get_current_user(
     authorization: str = Header(None, alias="Authorization"),
@@ -199,7 +208,30 @@ async def get_current_user(
         )
     token = authorization.split(" ", 1)[1]
     payload = decode_token(token, settings.jwt_secret_key, settings.jwt_algorithm)
-    return payload
+    
+    # Verify user exists in DB and is active
+    factory = get_session_factory(settings)
+    async with factory() as session:
+        repo = SQLAlchemyUserRepository(session)
+        user = await repo.get_by_username(payload.get("sub", ""))
+        
+        if not user or not user.is_active:
+             raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        # Return dict expected by endpoints (mostly) but include role
+        # We can return the user dict from the payload with added role from DB if needed,
+        # or just the payload if the token claims are trusted. 
+        # But for RBAC, we want the current role from DB to support immediate revocations.
+        return {
+            "username": user.username,
+            "role": user.role,
+            "id": user.id,
+            "email": user.email
+        }
 
 
 # ── Use-case handler factories ───────────────────────────────

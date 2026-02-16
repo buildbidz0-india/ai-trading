@@ -5,9 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
+
+from app.adapters.outbound.persistence.models import UserModel
+from app.adapters.outbound.persistence.repositories import SQLAlchemyUserRepository
 
 from app.application.commands import (
     CancelOrderCommand,
@@ -41,6 +44,7 @@ from app.application.services import AIOrchestrationService
 from app.config import Settings
 from app.dependencies import (
     get_ai_orchestration_service,
+    get_broker,
     get_cached_settings,
     get_cancel_order_handler,
     get_current_user,
@@ -48,8 +52,16 @@ from app.dependencies import (
     get_place_order_handler,
     get_positions_handler,
     get_trade_history_handler,
+    get_user_repository,
 )
-from app.shared.security import create_access_token, create_refresh_token, verify_password
+from app.shared.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
+from app.shared.security.rbac import require_role
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -117,32 +129,49 @@ async def prometheus_metrics() -> Response:
 # ═══════════════════════════════════════════════════════════════
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Demo users (replace with DB in production)
-_DEMO_USERS = {
-    "admin": {
-        "password_hash": "$2b$12$LJ3m4ys3Lz0Y7HsQb7Xz0uXepNYSqR3U1VBZK0xK7WJR4r3QfLCi",
-        "role": "admin",
-        "sub": "admin",
-    }
-}
+auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+@auth_router.post("/register", status_code=201)
+async def register_user(
+    body: TokenRequest,
+    user_repo: SQLAlchemyUserRepository = Depends(get_user_repository),
+) -> dict[str, str]:
+    """Register a new user (admin or trader). For MVP, open registration."""
+    if await user_repo.username_exists(body.username):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Username already taken"
+        )
+    
+    # Create user
+    new_user = UserModel(
+        username=body.username,
+        email=f"{body.username}@example.com",  # Placeholder email
+        password_hash=hash_password(body.password),
+        role="trader",  # Default role
+        is_active=True,
+    )
+    await user_repo.create(new_user)
+    return {"message": "User created successfully"}
 
 
 @auth_router.post("/token", response_model=TokenResponse)
-async def create_token(body: TokenRequest) -> TokenResponse:
+async def create_token(
+    body: TokenRequest,
+    user_repo: SQLAlchemyUserRepository = Depends(get_user_repository),
+) -> TokenResponse:
+    """Login with username and password."""
     settings = get_cached_settings()
-    user = _DEMO_USERS.get(body.username)
-    if not user:
+    
+    user = await user_repo.get_by_username(body.username)
+    if not user or not verify_password(body.password, user.password_hash):
         from app.domain.exceptions import AuthenticationError
-
         raise AuthenticationError("Invalid credentials")
 
-    # Verify password using bcrypt
-    if not verify_password(body.password, user["password_hash"]):
-        from app.domain.exceptions import AuthenticationError
+    if not user.is_active:
+        raise AuthenticationError("User is inactive")
 
-        raise AuthenticationError("Invalid credentials")
-
-    token_data = {"sub": user["sub"], "role": user["role"]}
+    token_data = {"sub": user.username, "role": user.role, "id": user.id}
     access = create_access_token(
         token_data,
         settings.jwt_secret_key,
@@ -160,6 +189,43 @@ async def create_token(body: TokenRequest) -> TokenResponse:
         refresh_token=refresh,
         expires_in=settings.jwt_access_token_expire_minutes * 60,
     )
+
+
+@auth_router.post("/refresh", response_model=TokenResponse)
+async def refresh_token_endpoint(
+    refresh_token: str,
+    user_repo: SQLAlchemyUserRepository = Depends(get_user_repository),
+) -> TokenResponse:
+    """Exchange refresh token for new access token."""
+    settings = get_cached_settings()
+    
+    try:
+        payload = decode_token(refresh_token, settings.jwt_secret_key, settings.jwt_algorithm)
+        if payload.get("type") != "refresh":
+             raise HTTPException(status_code=401, detail="Invalid token type")
+        
+        username = payload.get("sub")
+        user = await user_repo.get_by_username(username)
+        if not user or not user.is_active:
+             raise HTTPException(status_code=401, detail="User not found or inactive")
+             
+        # Issue new access token
+        token_data = {"sub": user.username, "role": user.role, "id": user.id}
+        new_access = create_access_token(
+            token_data,
+            settings.jwt_secret_key,
+            settings.jwt_algorithm,
+            settings.jwt_access_token_expire_minutes,
+        )
+        # Optionally rotate refresh token here too
+        
+        return TokenResponse(
+            access_token=new_access,
+            refresh_token=refresh_token, # Keep existing refresh token until expiry
+            expires_in=settings.jwt_access_token_expire_minutes * 60,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid refresh token: {str(e)}")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -398,7 +464,7 @@ async def provider_health(
 @providers_router.post("/{provider_id}/reset")
 async def reset_provider(
     provider_id: str,
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_role("admin")),
 ) -> dict:
     """Admin: reset circuit breaker and quota for a provider."""
     llm = get_llm()
@@ -418,49 +484,9 @@ async def get_historical_data(
     resolution: str,
     from_date: datetime,
     to_date: datetime,
+    broker=Depends(get_broker),
     _user: dict = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """Get historical OHLCV data."""
-    settings = get_cached_settings()
-    
-    # In a real app, we'd get the active broker adapter from a factory/dependency
-    # For this MVP, we'll instantiate the configured one or use a singleton.
-    # We'll rely on the settings to decide.
-    
-    # Quick factory logic (should be in dependencies.py preferably)
-    from app.adapters.outbound.broker.zerodha import ZerodhaBrokerAdapter
-    from app.adapters.outbound.broker.shoonya import ShoonyaBrokerAdapter
-    
-    adapter = None
-    if settings.broker_provider == "zerodha":
-        adapter = ZerodhaBrokerAdapter(
-            api_key=settings.zerodha_api_key,
-            api_secret=settings.zerodha_api_secret,
-            access_token=settings.zerodha_access_token
-        )
-    elif settings.broker_provider == "shoonya":
-        adapter = ShoonyaBrokerAdapter(
-            user_id=settings.shoonya_user_id,
-            password=settings.shoonya_password,
-            api_key=settings.shoonya_api_key
-        )
-        # Shoonya might need login if not reusing session, but let's assume valid for now
-        # or it will re-login if we implemented auto-login in adapter.
-        # The Shoonya adapter implemented above has a login method but doesn't auto-call it in init.
-        # For MVP, we might fail if not logged in.
-    
-    if not adapter:
-         # Fallback to mock data if no broker configured or "paper"
-         return [
-             {
-                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                 "open": 22000, "high": 22100, "low": 21900, "close": 22050, "volume": 1000
-             }
-         ]
-
-    data: list[dict[str, Any]] = []
-    try:
-        data = await adapter.get_historical_data(symbol, resolution, from_date, to_date)
-    finally:
-        await adapter.close()
-    return data
+    # Uses the injected broker adapter directly
+    return await broker.get_historical_data(symbol, resolution, from_date, to_date)

@@ -130,9 +130,9 @@ class Settings(BaseSettings):
     def _guard_production_secrets(self) -> Settings:
         """Prevent production from running with insecure defaults."""
         if self.app_env == Environment.PRODUCTION:
-            if self.jwt_secret_key in ("CHANGE-ME", ""):
+            if self.jwt_secret_key in ("CHANGE-ME", "") or len(self.jwt_secret_key) < 32:
                 raise ValueError(
-                    "jwt_secret_key must be set to a secure value in production"
+                    "jwt_secret_key must be set to a secure value (min 32 chars) in production"
                 )
             if self.paper_trading_mode:
                 import warnings
