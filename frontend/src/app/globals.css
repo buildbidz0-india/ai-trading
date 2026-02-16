@@ -1,7 +1,5 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
-
+@plugin "tailwindcss-animate";
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -114,35 +112,36 @@
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
+}
 
 
-  @layer base {
-    * {
-      @apply border-border outline-ring/50;
-    }
-
-    body {
-      @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
-      background-image:
-        radial-gradient(at 0% 0%, var(--mica-tint) 0px, transparent 50%),
-        radial-gradient(at 100% 0%, var(--mica-tint) 0px, transparent 50%);
-    }
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
 
-  @layer utilities {
-    .acrylic-material {
-      @apply bg-background/60 backdrop-blur-xl border border-white/10 shadow-xl supports-[backdrop-filter]:bg-background/60;
-    }
-
-    .mica-material {
-      @apply bg-background/80 backdrop-blur-2xl border border-white/5;
-    }
-
-    .fluent-card {
-      @apply rounded-xl border border-black/5 dark:border-white/5 shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5;
-    }
-
-    .fluent-input {
-      @apply bg-black/5 dark:bg-white/5 border-transparent focus:border-primary/50 focus:bg-background transition-all duration-200 rounded-md;
-    }
+  body {
+    @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
+    background-image:
+      radial-gradient(at 0% 0%, var(--mica-tint) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, var(--mica-tint) 0px, transparent 50%);
   }
+}
+
+@layer utilities {
+  .acrylic-material {
+    @apply bg-background/60 backdrop-blur-xl border border-white/10 shadow-xl supports-[backdrop-filter]:bg-background/60;
+  }
+
+  .mica-material {
+    @apply bg-background/80 backdrop-blur-2xl border border-white/5;
+  }
+
+  .fluent-card {
+    @apply rounded-xl border border-black/5 dark:border-white/5 shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5;
+  }
+
+  .fluent-input {
+    @apply bg-black/5 dark:bg-white/5 border-transparent focus:border-primary/50 focus:bg-background transition-all duration-200 rounded-md;
+  }
+}

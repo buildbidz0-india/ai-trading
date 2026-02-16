@@ -3,6 +3,7 @@ import { AcrylicCard } from "@/components/ui/AcrylicCard";
 import { ChartComponent } from "@/components/ui/Chart";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { Badge } from "lucide-react"; // Wait, Badge is usually a component, let's just use div or install Badge
 // Actually I don't have Badge component, I will use spans with classes.
 
