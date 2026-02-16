@@ -116,8 +116,10 @@ async def test_admin_access(client, session):
     # Manually create admin user in DB
     from app.adapters.outbound.persistence.models import UserModel
     from app.shared.security import hash_password
+    import uuid
     
     admin_user = UserModel(
+        id=str(uuid.uuid4()),
         username="admin_user",
         email="admin@example.com",
         password_hash=hash_password("adminpass"),

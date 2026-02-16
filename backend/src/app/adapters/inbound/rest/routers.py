@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -127,9 +128,7 @@ async def prometheus_metrics() -> Response:
 # ═══════════════════════════════════════════════════════════════
 #  Auth
 # ═══════════════════════════════════════════════════════════════
-auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
-
-auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
+auth_router = APIRouter(prefix="/auth", tags=["Authentication"]) # Removed duplicate definition
 
 
 @auth_router.post("/register", status_code=201)
@@ -145,6 +144,7 @@ async def register_user(
     
     # Create user
     new_user = UserModel(
+        id=str(uuid.uuid4()), # Added id field
         username=body.username,
         email=f"{body.username}@example.com",  # Placeholder email
         password_hash=hash_password(body.password),

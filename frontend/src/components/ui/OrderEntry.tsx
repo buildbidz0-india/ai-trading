@@ -13,8 +13,9 @@ export function OrderEntry() {
     const isPlacingOrder = useStore((s) => s.isPlacingOrder);
     const addOrder = useStore((s) => s.addOrder);
 
+    const settings = useStore((s) => s.settings);
     const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
-    const [quantity, setQuantity] = useState(50);
+    const [quantity, setQuantity] = useState(settings.defaultQuantity || 50);
     const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
     const [limitPrice, setLimitPrice] = useState('');
     const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);

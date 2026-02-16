@@ -57,18 +57,22 @@ export function useHistoricalData(symbol: string): UseHistoricalDataReturn {
             });
 
             // Map response to Lightweight Charts format
-            // API returns { timestamp: iso_string, ... }
-            // Lightweight charts wants 'yyyy-mm-dd' string for daily, or unix timestamp for intraday.
-            // For simplicity in this DTO we use string but we might need to cast in the component.
-            const candles = response.data.map((c: any) => ({
-                time: c.timestamp.split('T')[0], // Quick hack for daily, Component will handle intraday casting
-                open: c.open,
-                high: c.high,
-                low: c.low,
-                close: c.close,
-                volume: c.volume,
-                originalTimestamp: c.timestamp // Keep original for intraday casting
-            }));
+            const candles = response.data.map((c: any) => {
+                const dateObj = new Date(c.timestamp);
+                // For daily, use string 'yyyy-mm-dd'. For everything else, use unix timestamp (seconds).
+                const time = resolution === '1d' 
+                    ? c.timestamp.split('T')[0] 
+                    :  Math.floor(dateObj.getTime() / 1000); 
+
+                return {
+                    time: time,
+                    open: c.open,
+                    high: c.high,
+                    low: c.low,
+                    close: c.close,
+                    volume: c.volume,
+                };
+            });
 
             setData(candles);
         } catch (err: any) {

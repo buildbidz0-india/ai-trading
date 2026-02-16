@@ -50,6 +50,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         env=settings.app_env.value,
         paper_mode=settings.paper_trading_mode,
     )
+
+    # ── Wire Event Consumers ─────────────────────────────────
+    from app.dependencies import get_event_bus, get_cache
+    from app.application.consumers import AgentLogConsumer
+    from app.domain.events import AgentAnalysisCompletedEvent
+
+    # We need to construct consumers with dependencies
+    # Since lifespan runs before requests, we use global getters (safe here as singletons initialized)
+    # Ensure cache is initialized
+    _cache = get_cache(settings)
+    _bus = get_event_bus()
+    
+    # Register Agent Log Consumer
+    agent_consumer = AgentLogConsumer(_cache)
+    _bus.subscribe(AgentAnalysisCompletedEvent.event_type, agent_consumer.handle_analysis_completed)
+
     yield
     # Shutdown: close external connections
     from app.dependencies import get_cache, get_llm
@@ -113,6 +129,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ai_router, prefix=api_v1)
     app.include_router(providers_router, prefix=api_v1)
     app.include_router(market_router, prefix=api_v1)
+
+    # ── Root route for Vercel ────────────────────────────────
+    @app.get("/")
+    async def root():
+        return {
+            "message": "AI Trading Platform API is running",
+            "docs": "/docs",
+            "health": "/api/v1/health"
+        }
 
     # ── WebSocket routers ────────────────────────────────────
     app.include_router(ws_router)

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Watchlist } from "@/components/ui/Watchlist";
 import { OrderEntry } from "@/components/ui/OrderEntry";
 import { useTickStream } from "@/hooks/useTickStream";
+import { AgentLog } from "@/components/ui/AgentLog";
 
 export default function Home() {
   // Connect to live WebSocket tick stream
@@ -45,31 +46,9 @@ export default function Home() {
         <div className="col-span-12 lg:col-span-3 flex flex-col gap-6">
           <Watchlist />
           <OrderEntry />
-
-          {/* AI Agent Log */}
-          <AcrylicCard className="flex-1 flex flex-col p-4 min-h-[300px]">
-            <div className="font-semibold mb-3 flex items-center gap-2">
-              <div className="size-2 rounded-full bg-green-500 animate-pulse" />
-              AI Agent Log
-            </div>
-            <div className="flex-1 overflow-auto space-y-3 pr-2 text-sm font-mono scrollbar-thin scrollbar-thumb-white/10">
-              <LogEntry time="10:30:05" type="INFO" msg="Scanning NIFTY 50 Option Chain..." />
-              <LogEntry time="10:30:12" type="ANALYSIS" msg="Detected Bullish divergence in RSI." color="text-blue-400" />
-              <LogEntry time="10:30:45" type="DECISION" msg="Holding position. Waiting for confirm." color="text-yellow-400" />
-              <LogEntry time="10:31:00" type="INFO" msg="PCR Shifted to 0.87" />
-            </div>
-          </AcrylicCard>
+          <AgentLog />
         </div>
       </div>
     </Shell>
   );
-}
-
-function LogEntry({ time, type, msg, color }: { time: string, type: string, msg: string, color?: string }) {
-  return (
-    <div className="flex gap-2">
-      <span className="text-muted-foreground opacity-50 shrink-0">[{time}]</span>
-      <span className={cn("break-words", color)}><span className="font-bold opacity-70">{type}:</span> {msg}</span>
-    </div>
-  )
 }
